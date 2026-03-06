@@ -54,14 +54,12 @@ async def _connect_http(server: MCPServerHTTP) -> tuple[Any, list[Any]]:
 
 
 def _mcp_tool_to_openai(tool: Any) -> dict:
-    """MCP tool 스키마를 OpenAI function tool 형식으로 변환한다."""
+    """MCP tool 스키마를 OpenAI Realtime function tool 형식으로 변환한다."""
     return {
         "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.inputSchema,
-        },
+        "name": tool.name,
+        "description": tool.description or "",
+        "parameters": tool.inputSchema or {"type": "object", "properties": {}},
     }
 
 
@@ -134,7 +132,7 @@ class MCPClient:
         """MCP 도구를 호출하고 결과를 문자열로 반환한다."""
         assert self._session is not None, "connect()를 먼저 호출하세요."
 
-        result = await self._session.call_tool(name, arguments)
+        result = await self._session.call_tool(name, arguments=arguments)
         texts = [
             block.text for block in result.content if block.type == "text"
         ]

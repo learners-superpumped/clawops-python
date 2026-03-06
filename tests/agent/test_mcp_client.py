@@ -92,9 +92,9 @@ class TestMCPClientConnect:
         assert len(client.tools) == 1
         tool = client.tools[0]
         assert tool["type"] == "function"
-        assert tool["function"]["name"] == "get_weather"
-        assert tool["function"]["description"] == "Get weather info"
-        assert tool["function"]["parameters"] == {
+        assert tool["name"] == "get_weather"
+        assert tool["description"] == "Get weather info"
+        assert tool["parameters"] == {
             "type": "object",
             "properties": {"city": {"type": "string"}},
             "required": ["city"],
@@ -125,7 +125,7 @@ class TestMCPClientConnect:
 
         assert client._session is mock_session
         assert len(client.tools) == 1
-        assert client.tools[0]["function"]["name"] == "search"
+        assert client.tools[0]["name"] == "search"
 
     @pytest.mark.asyncio
     async def test_connect_lists_multiple_tools(self):
@@ -180,7 +180,7 @@ class TestMCPClientCallTool:
 
         result = await client.call_tool("get_weather", {"city": "Seoul"})
         assert result == "Sunny, 25C"
-        mock_session.call_tool.assert_awaited_once_with("get_weather", {"city": "Seoul"})
+        mock_session.call_tool.assert_awaited_once_with("get_weather", arguments={"city": "Seoul"})
 
     @pytest.mark.asyncio
     async def test_call_tool_error_result(self):
