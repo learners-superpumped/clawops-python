@@ -149,8 +149,9 @@ class ClawOpsAgent:
         if self._mcp_servers:
             log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
             for server_config in self._mcp_servers:
-                mcp_clients.append(MCPClient(server_config))
-            await asyncio.gather(*[c.connect() for c in mcp_clients])
+                client = MCPClient(server_config)
+                await client.connect()
+                mcp_clients.append(client)
             self._tool_registry.register_mcp_tools(mcp_clients)
 
         realtime = RealtimeSession(self._config, self._tool_registry, recorder=recorder)
@@ -181,7 +182,8 @@ class ClawOpsAgent:
             await realtime.stop()
             if mcp_clients:
                 self._tool_registry.clear_mcp_tools()
-                await asyncio.gather(*[c.close() for c in mcp_clients], return_exceptions=True)
+                for c in mcp_clients:
+                    await c.close()
             if recorder:
                 recorder.stop()
             await call._emit("call_end")
