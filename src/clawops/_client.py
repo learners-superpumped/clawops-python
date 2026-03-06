@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import os
+from typing import Any
+
+import httpx
+
+from ._base_client import AsyncAPIClient, SyncAPIClient
+from ._constants import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT
+from ._exceptions import ClawOpsError
+from .resources.accounts import AccountContext, AsyncAccountContext
+from .resources.calls import AsyncCalls, Calls
+from .resources.numbers import AsyncNumbers, Numbers
+from .resources.sip import AsyncSip, Sip
+from .webhooks import Webhooks
+
+
+class ClawOps(SyncAPIClient):
+    """ClawOps Voice API의 동기 클라이언트.
+
+    Example::
+
+        from clawops import ClawOps
+
+        client = ClawOps(api_key="sk_...", account_id="AC1a2b3c4d")
+
+        call = client.calls.create(
+            to="01012345678", from_="07052358010",
+            url="https://my-app.com/twiml",
+        )
+
+        other = client.accounts("AC_other")
+        other.calls.list()
+
+    Args:
+        api_key: API 키 (sk_...). 생략 시 CLAWOPS_API_KEY 환경변수 사용.
+        account_id: 기본 계정 ID (AC...). 생략 시 CLAWOPS_ACCOUNT_ID 환경변수 사용.
+        base_url: API 기본 URL. 기본값: https://api.claw-ops.com
+        timeout: 요청 타임아웃 (초 또는 httpx.Timeout). 기본값: 600초.
+        max_retries: 최대 재시도 횟수. 기본값: 2.
+        http_client: 커스텀 httpx.Client 인스턴스.
+        default_headers: 모든 요청에 포함할 기본 HTTP 헤더.
+    """
+
+    _default_account_id: str
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        account_id: str | None = None,
+        base_url: str | None = None,
+        timeout: float | httpx.Timeout = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        http_client: httpx.Client | None = None,
+        default_headers: dict[str, str] | None = None,
+    ) -> None:
+        if api_key is None:
+            api_key = os.environ.get("CLAWOPS_API_KEY")
+        if api_key is None:
+            raise ClawOpsError("api_key를 지정하거나 CLAWOPS_API_KEY 환경변수를 설정하세요.")
+
+        if account_id is None:
+            account_id = os.environ.get("CLAWOPS_ACCOUNT_ID")
+        if account_id is None:
+            raise ClawOpsError("account_id를 지정하거나 CLAWOPS_ACCOUNT_ID 환경변수를 설정하세요.")
+
+        if base_url is None:
+            base_url = os.environ.get("CLAWOPS_BASE_URL", DEFAULT_BASE_URL)
+
+        self._default_account_id = account_id
+
+        super().__init__(
+            api_key=api_key, base_url=base_url, timeout=timeout,
+            max_retries=max_retries, http_client=http_client, default_headers=default_headers,
+        )
+
+    @property
+    def calls(self) -> Calls:
+        """통화(Calls) 리소스에 접근합니다."""
+        return Calls(client=self, account_id=self._default_account_id)
+
+    @property
+    def numbers(self) -> Numbers:
+        """전화번호(Numbers) 리소스에 접근합니다."""
+        return Numbers(client=self, account_id=self._default_account_id)
+
+    @property
+    def sip(self) -> Sip:
+        """SIP 리소스에 접근합니다."""
+        return Sip(client=self, account_id=self._default_account_id)
+
+    @property
+    def webhooks(self) -> Webhooks:
+        """Webhook 서명 검증 유틸리티."""
+        return Webhooks()
+
+    def accounts(self, account_id: str) -> AccountContext:
+        """다른 계정의 리소스에 접근합니다.
+
+        Args:
+            account_id: 접근할 계정 ID.
+
+        Returns:
+            해당 계정에 바인딩된 AccountContext 객체.
+        """
+        return AccountContext(client=self, account_id=account_id)
+
+
+class AsyncClawOps(AsyncAPIClient):
+    """ClawOps Voice API의 비동기 클라이언트.
+
+    Example::
+
+        async with AsyncClawOps(api_key="sk_...", account_id="AC...") as client:
+            call = await client.calls.create(
+                to="01012345678", from_="07052358010",
+                url="https://my-app.com/twiml",
+            )
+    """
+
+    _default_account_id: str
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        account_id: str | None = None,
+        base_url: str | None = None,
+        timeout: float | httpx.Timeout = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        http_client: httpx.AsyncClient | None = None,
+        default_headers: dict[str, str] | None = None,
+    ) -> None:
+        if api_key is None:
+            api_key = os.environ.get("CLAWOPS_API_KEY")
+        if api_key is None:
+            raise ClawOpsError("api_key를 지정하거나 CLAWOPS_API_KEY 환경변수를 설정하세요.")
+
+        if account_id is None:
+            account_id = os.environ.get("CLAWOPS_ACCOUNT_ID")
+        if account_id is None:
+            raise ClawOpsError("account_id를 지정하거나 CLAWOPS_ACCOUNT_ID 환경변수를 설정하세요.")
+
+        if base_url is None:
+            base_url = os.environ.get("CLAWOPS_BASE_URL", DEFAULT_BASE_URL)
+
+        self._default_account_id = account_id
+
+        super().__init__(
+            api_key=api_key, base_url=base_url, timeout=timeout,
+            max_retries=max_retries, http_client=http_client, default_headers=default_headers,
+        )
+
+    @property
+    def calls(self) -> AsyncCalls:
+        return AsyncCalls(client=self, account_id=self._default_account_id)
+
+    @property
+    def numbers(self) -> AsyncNumbers:
+        return AsyncNumbers(client=self, account_id=self._default_account_id)
+
+    @property
+    def sip(self) -> AsyncSip:
+        return AsyncSip(client=self, account_id=self._default_account_id)
+
+    @property
+    def webhooks(self) -> Webhooks:
+        return Webhooks()
+
+    def accounts(self, account_id: str) -> AsyncAccountContext:
+        return AsyncAccountContext(client=self, account_id=account_id)
