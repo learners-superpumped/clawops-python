@@ -10,6 +10,7 @@
 - [설정 옵션](#설정-옵션)
 - [Tool (함수 호출)](#tool-함수-호출)
 - [이벤트 핸들러](#이벤트-핸들러)
+- [통화 녹음](#통화-녹음)
 - [파이프라인 모드 (커스텀 STT/LLM/TTS)](#파이프라인-모드-커스텀-sttllmtts)
 - [MCP 서버 연동](#mcp-서버-연동)
 - [CallSession](#callsession)
@@ -99,6 +100,10 @@ agent = ClawOpsAgent(
     language="ko",                    # 언어 (음성 인식용)
     eagerness="high",                 # 응답 적극성: low, medium, high, auto
     greeting=True,                    # 첫 인사 자동 생성 여부
+
+    # 녹음
+    recording=True,                       # 통화 녹음 활성화
+    recording_path="./recordings",        # 저장 경로 (기본값: ./recordings)
 
     # 고급
     base_url="https://api.claw-ops.com",  # API 엔드포인트
@@ -197,6 +202,35 @@ async def on_transcript(call, role, text):
 | `call_start` | `(call)` | 통화 시작 |
 | `call_end` | `(call)` | 통화 종료 |
 | `transcript` | `(call, role, text)` | 음성 텍스트 생성 |
+
+## 통화 녹음
+
+`recording=True`로 통화를 실시간 녹음할 수 있습니다. 통화마다 3개 WAV 파일(PCM16 8kHz mono)이 생성됩니다.
+
+```python
+agent = ClawOpsAgent(
+    from_="07012341234",
+    system_prompt="상담원입니다.",
+    recording=True,
+    recording_path="./recordings",  # 기본값
+)
+```
+
+### 생성되는 파일
+
+| 파일 | 내용 |
+|------|------|
+| `{call_id}_in.wav` | 발신자 음성 (수신 오디오) |
+| `{call_id}_out.wav` | AI 응답 (송신 오디오) |
+| `{call_id}_mix.wav` | 양방향 믹스 |
+
+### 동작 원리
+
+- 수신 오디오(발신자)가 타임라인 역할을 합니다
+- 송신 오디오(AI 응답)는 버퍼에 쌓이고, 수신 청크가 올 때마다 같은 길이만큼 꺼내서 샘플 단위로 믹스합니다
+- 별도 시간 관리 없이 자연스럽게 정렬됩니다
+- 파일은 실시간으로 기록되므로 통화 중 디스크에 바로 저장됩니다
+- 통화 종료 시 WAV 헤더가 최종 크기로 업데이트됩니다
 
 ## 파이프라인 모드 (커스텀 STT/LLM/TTS)
 
@@ -373,6 +407,11 @@ ClawOpsAgent
 │   ├── register            # 데코레이터로 함수 등록
 │   ├── to_openai_tools()   # JSON Schema 자동 생성
 │   └── call()              # 이름으로 함수 호출
+│
+├── AudioRecorder (콜별)    # 실시간 녹음 (recording=True 시)
+│   ├── write_inbound()     # 수신 오디오 → _in.wav + _mix.wav
+│   ├── write_outbound()    # 송신 오디오 → _out.wav + mix 버퍼
+│   └── stop()              # WAV 헤더 업데이트
 │
 ├── CallSession (콜별)      # 통화 상태 관리
 │   ├── audio_stream()      # 수신 오디오 스트림

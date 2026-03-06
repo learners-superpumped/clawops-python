@@ -47,6 +47,22 @@ async def on_start(call):
 agent.listen()  # WebSocket 연결 후 인바운드 대기
 ```
 
+### 통화 녹음
+
+```python
+agent = ClawOpsAgent(
+    from_="07012341234",
+    system_prompt="상담원입니다.",
+    recording=True,                  # 녹음 활성화
+    recording_path="./recordings",   # 저장 경로 (기본값)
+)
+```
+
+통화마다 3개 WAV 파일이 실시간 생성됩니다:
+- `{call_id}_in.wav` — 발신자 음성
+- `{call_id}_out.wav` — AI 응답
+- `{call_id}_mix.wav` — 양방향 믹스
+
 > 자세한 사용법은 **[Agent 문서](docs/agent.md)** 를 참고하세요.
 
 ## REST API 사용법
