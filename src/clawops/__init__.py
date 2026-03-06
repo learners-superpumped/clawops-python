@@ -1,3 +1,62 @@
-from ._version import __version__
+"""ClawOps Voice API의 공식 Python SDK.
 
-__all__ = ["__version__"]
+Example::
+
+    from clawops import ClawOps
+
+    client = ClawOps(api_key="sk_...", account_id="AC1a2b3c4d")
+    call = client.calls.create(
+        to="01012345678", from_="07052358010",
+        url="https://my-app.com/twiml",
+    )
+    print(call.call_id)
+"""
+
+from ._client import AsyncClawOps, ClawOps
+from ._exceptions import (
+    APIConnectionError,
+    APIError,
+    APIResponseValidationError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    ClawOpsError,
+    ConflictError,
+    InternalServerError,
+    NotFoundError,
+    PermissionDeniedError,
+    ServiceUnavailableError,
+    UnprocessableEntityError,
+)
+from ._version import __version__
+from .webhooks import WebhookVerificationError
+
+__all__ = [
+    "ClawOps",
+    "AsyncClawOps",
+    "ClawOpsError",
+    "APIError",
+    "APIStatusError",
+    "APIConnectionError",
+    "APITimeoutError",
+    "APIResponseValidationError",
+    "BadRequestError",
+    "AuthenticationError",
+    "PermissionDeniedError",
+    "NotFoundError",
+    "ConflictError",
+    "UnprocessableEntityError",
+    "InternalServerError",
+    "ServiceUnavailableError",
+    "WebhookVerificationError",
+    "__version__",
+]
+
+_locals = locals()
+for _name in __all__:
+    if not _name.startswith("__"):
+        try:
+            _locals[_name].__module__ = "clawops"
+        except (TypeError, AttributeError):
+            pass
