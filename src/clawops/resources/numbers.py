@@ -58,13 +58,13 @@ class Numbers(SyncAPIResource):
         from .._models import BaseModel
 
         class _NumbersResponse(BaseModel):
-            numbers: list[NumberListItem]
+            data: list[NumberListItem]
 
         result = self._client._get(
             f"{self._base_path}/numbers", cast_to=_NumbersResponse,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
         )
-        return result.numbers
+        return result.data
 
     def update(self, number: str, *, webhook_url: str | None = None,
                webhook_method: Literal["POST", "GET"] | None = None,
@@ -132,13 +132,13 @@ class AsyncNumbers(AsyncAPIResource):
         from .._models import BaseModel
 
         class _NumbersResponse(BaseModel):
-            numbers: list[NumberListItem]
+            data: list[NumberListItem]
 
         result = await self._client._get(
             f"{self._base_path}/numbers", cast_to=_NumbersResponse,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
         )
-        return result.numbers
+        return result.data
 
     async def update(self, number: str, *, webhook_url: str | None = None,
                      webhook_method: Literal["POST", "GET"] | None = None,

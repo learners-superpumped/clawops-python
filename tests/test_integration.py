@@ -43,13 +43,13 @@ class TestSyncIntegration:
     @respx.mock
     def test_full_number_lifecycle(self):
         respx.post(f"{BASE}/v1/accounts/{ACCOUNT}/numbers").mock(
-            return_value=httpx.Response(201, json={"number": "1001", "source": "sip"}))
+            return_value=httpx.Response(201, json={"number": "1001", "source": "sip", "webhookUrl": None, "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}))
         respx.get(f"{BASE}/v1/accounts/{ACCOUNT}/numbers").mock(
-            return_value=httpx.Response(200, json={"numbers": [
-                {"number": "1001", "source": "sip", "webhookUrl": None, "createdAt": "2025-06-01T12:00:00Z"}]}))
+            return_value=httpx.Response(200, json={"data": [
+                {"number": "1001", "source": "sip", "webhookUrl": None, "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}]}))
         respx.put(f"{BASE}/v1/accounts/{ACCOUNT}/numbers/1001").mock(
             return_value=httpx.Response(200, json={"number": "1001", "source": "sip",
-                                                    "webhookUrl": "https://new.com", "webhookMethod": "POST"}))
+                                                    "webhookUrl": "https://new.com", "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}))
         respx.delete(f"{BASE}/v1/accounts/{ACCOUNT}/numbers/1001").mock(return_value=httpx.Response(204))
 
         with ClawOps(api_key="sk_test", account_id=ACCOUNT, max_retries=0) as client:
@@ -71,11 +71,13 @@ class TestSyncIntegration:
         }
         respx.post(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials").mock(return_value=httpx.Response(201, json=cred_json))
         respx.get(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials").mock(
-            return_value=httpx.Response(200, json={"credentials": [
-                {"id": cred_id, "username": "usr_aBcDeFgHiJkL", "displayName": "Office", "createdAt": "2025-06-01T12:00:00Z"}]}))
+            return_value=httpx.Response(200, json={"data": [
+                {"id": cred_id, "username": "usr_aBcDeFgHiJkL", "displayName": "Office",
+                 "sipServer": "sip.claw-ops.com", "sipPort": 5060, "transport": "UDP", "createdAt": "2025-06-01T12:00:00Z"}]}))
         respx.get(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials/{cred_id}").mock(
             return_value=httpx.Response(200, json={
-                "id": cred_id, "username": "usr_aBcDeFgHiJkL", "displayName": "Office", "createdAt": "2025-06-01T12:00:00Z"}))
+                "id": cred_id, "username": "usr_aBcDeFgHiJkL", "displayName": "Office",
+                 "sipServer": "sip.claw-ops.com", "sipPort": 5060, "transport": "UDP", "createdAt": "2025-06-01T12:00:00Z"}))
         respx.delete(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials/{cred_id}").mock(return_value=httpx.Response(204))
 
         with ClawOps(api_key="sk_test", account_id=ACCOUNT, max_retries=0) as client:
@@ -90,7 +92,7 @@ class TestSyncIntegration:
     @respx.mock
     def test_multi_account(self):
         respx.get(f"{BASE}/v1/accounts/AC_other/numbers").mock(
-            return_value=httpx.Response(200, json={"numbers": []}))
+            return_value=httpx.Response(200, json={"data": []}))
         with ClawOps(api_key="sk_test", account_id=ACCOUNT, max_retries=0) as client:
             other = client.accounts("AC_other")
             nums = other.numbers.list()
@@ -128,7 +130,7 @@ class TestAsyncIntegration:
     @pytest.mark.asyncio
     async def test_async_multi_account(self):
         respx.get(f"{BASE}/v1/accounts/AC_other/numbers").mock(
-            return_value=httpx.Response(200, json={"numbers": []}))
+            return_value=httpx.Response(200, json={"data": []}))
         async with AsyncClawOps(api_key="sk_test", account_id=ACCOUNT, max_retries=0) as client:
             other = client.accounts("AC_other")
             nums = await other.numbers.list()

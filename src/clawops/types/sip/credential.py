@@ -39,10 +39,16 @@ class SipCredentialListItem(BaseModel):
         id: Credential 고유 식별자.
         username: SIP 사용자명.
         display_name: 디스플레이 이름.
+        sip_server: SIP 서버 주소.
+        sip_port: SIP 포트 번호.
+        transport: 전송 프로토콜.
         created_at: 생성 시각.
     """
 
     id: str
     username: str
     display_name: Optional[str] = None
+    sip_server: Optional[str] = None
+    sip_port: Optional[int] = None
+    transport: Optional[str] = None
     created_at: Optional[datetime] = None

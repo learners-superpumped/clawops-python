@@ -39,7 +39,7 @@ class TestList:
     @respx.mock
     def test_list(self, creds):
         respx.get(f"{BASE}{CREDS_PATH}").mock(return_value=httpx.Response(200, json={
-            "credentials": [{"id": "clu1", "username": "usr_abc", "displayName": None, "createdAt": "2025-06-01T12:00:00Z"}]
+            "data": [{"id": "clu1", "username": "usr_abc", "displayName": None, "sipServer": "sip.claw-ops.com", "sipPort": 5060, "transport": "UDP", "createdAt": "2025-06-01T12:00:00Z"}]
         }))
         result = creds.list()
         assert len(result) == 1

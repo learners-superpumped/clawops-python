@@ -48,13 +48,13 @@ class SipCredentials(SyncAPIResource):
         from ..._models import BaseModel
 
         class _CredentialsResponse(BaseModel):
-            credentials: list[SipCredentialListItem]
+            data: list[SipCredentialListItem]
 
         result = self._client._get(
             f"{self._base_path}/sip/credentials", cast_to=_CredentialsResponse,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
         )
-        return result.credentials
+        return result.data
 
     def get(self, credential_id: str, *, extra_headers: dict[str, str] | None = None,
             extra_query: dict[str, object] | None = None, timeout: float | None = None) -> SipCredentialListItem:
@@ -111,13 +111,13 @@ class AsyncSipCredentials(AsyncAPIResource):
         from ..._models import BaseModel
 
         class _CredentialsResponse(BaseModel):
-            credentials: list[SipCredentialListItem]
+            data: list[SipCredentialListItem]
 
         result = await self._client._get(
             f"{self._base_path}/sip/credentials", cast_to=_CredentialsResponse,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
         )
-        return result.credentials
+        return result.data
 
     async def get(self, credential_id: str, *, extra_headers: dict[str, str] | None = None,
                   extra_query: dict[str, object] | None = None, timeout: float | None = None) -> SipCredentialListItem:

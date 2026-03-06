@@ -42,9 +42,9 @@ class TestNumbersList:
     @respx.mock
     def test_list(self, numbers):
         respx.get(f"{BASE}{NUMBERS_PATH}").mock(return_value=httpx.Response(200, json={
-            "numbers": [
-                {"number": "07012340001", "source": "pool", "webhookUrl": None, "createdAt": "2025-06-01T12:00:00Z"},
-                {"number": "1001", "source": "sip", "webhookUrl": "https://my-app.com", "createdAt": "2025-06-01T12:00:00Z"},
+            "data": [
+                {"number": "07012340001", "source": "pool", "webhookUrl": None, "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"},
+                {"number": "1001", "source": "sip", "webhookUrl": "https://my-app.com", "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"},
             ]
         }))
         result = numbers.list()
@@ -55,7 +55,7 @@ class TestNumbersUpdate:
     @respx.mock
     def test_update_webhook(self, numbers):
         respx.put(f"{BASE}{NUMBERS_PATH}/1001").mock(return_value=httpx.Response(200, json={
-            "number": "1001", "source": "sip", "webhookUrl": "https://new.com", "webhookMethod": "POST",
+            "number": "1001", "source": "sip", "webhookUrl": "https://new.com", "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z",
         }))
         result = numbers.update("1001", webhook_url="https://new.com")
         assert isinstance(result, NumberUpdateResponse)
