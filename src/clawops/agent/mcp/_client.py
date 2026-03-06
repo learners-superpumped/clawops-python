@@ -90,8 +90,10 @@ class MCPClient:
             )
 
         if isinstance(self._server, MCPServerStdio):
+            log.debug("MCP connecting (stdio): %s %s", self._server.command, self._server.args)
             session, cleanup = await _connect_stdio(self._server)
         else:
+            log.debug("MCP connecting (http): %s", self._server.url)
             session, cleanup = await _connect_http(self._server)
 
         self._session = session
@@ -101,13 +103,12 @@ class MCPClient:
         self._tools = [_mcp_tool_to_openai(t) for t in result.tools]
         self._tool_names = {t.name for t in result.tools}
 
-        log.info(
-            "MCP 서버 연결 완료: %d개 도구 발견",
-            len(self._tools),
-        )
+        log.info("MCP 서버 연결 완료: %d개 도구 발견", len(self._tools))
+        log.debug("MCP tools: %s", list(self._tool_names))
 
     async def close(self) -> None:
         """연결을 종료하고 리소스를 정리한다."""
+        log.debug("MCP closing: %s", self._server)
         for cm in self._cleanup_list:
             try:
                 await cm.__aexit__(None, None, None)
@@ -131,6 +132,7 @@ class MCPClient:
     async def call_tool(self, name: str, arguments: dict) -> str:
         """MCP 도구를 호출하고 결과를 문자열로 반환한다."""
         assert self._session is not None, "connect()를 먼저 호출하세요."
+        log.debug("MCP call_tool: %s(%s)", name, arguments)
 
         result = await self._session.call_tool(name, arguments=arguments)
         texts = [

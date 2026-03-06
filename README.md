@@ -47,6 +47,44 @@ async def on_start(call):
 agent.listen()  # WebSocket 연결 후 인바운드 대기
 ```
 
+### MCP 서버 연동
+
+[Model Context Protocol](https://modelcontextprotocol.io/) 서버를 연결하여 AI에게 외부 도구를 제공할 수 있습니다.
+
+```bash
+pip install clawops[mcp]
+```
+
+```python
+from clawops.agent import ClawOpsAgent
+from clawops.agent.mcp import MCPServerStdio, MCPServerHTTP
+
+agent = ClawOpsAgent(
+    from_="07012341234",
+    system_prompt="상담원입니다.",
+    mcp_servers=[
+        MCPServerStdio("npx", args=["@modelcontextprotocol/server-google"], env={"GOOGLE_API_KEY": "..."}),
+        MCPServerHTTP("https://my-mcp-server.com", headers={"Authorization": "Bearer token"}),
+    ],
+)
+
+agent.listen()
+```
+
+MCP 서버는 전화가 올 때마다 자동으로 시작되고, 통화 종료 시 정리됩니다. MCP 서버가 제공하는 도구는 `@agent.tool`로 등록한 도구와 함께 OpenAI Realtime에 자동 등록됩니다.
+
+### 디버그 로깅
+
+Agent의 내부 동작 (MCP 연결, 도구 등록, 도구 호출 등)을 확인하려면 로깅 레벨을 `DEBUG`로 설정하세요.
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# 또는 clawops.agent 로거만 DEBUG로:
+logging.getLogger("clawops.agent").setLevel(logging.DEBUG)
+```
+
 > 자세한 사용법은 **[Agent 문서](docs/agent.md)** 를 참고하세요. (Tool, 이벤트, 통화 녹음, 파이프라인 모드, MCP 연동 등)
 
 ## REST API 사용법

@@ -6,10 +6,13 @@ OpenAI Realtime API의 tool 스키마를 자동 생성하고,
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
 
 from .._exceptions import AgentError
+
+log = logging.getLogger("clawops.agent")
 
 
 _PY_TYPE_TO_JSON: dict[type, str] = {
@@ -58,6 +61,7 @@ class ToolRegistry:
             handler=fn,
         )
         self._tools[fn.__name__] = tool
+        log.debug("Tool registered: %s (params: %s)", tool.name, list(properties.keys()))
         return fn
 
     def register_mcp_tools(self, clients: list[Any]) -> None:
@@ -67,8 +71,12 @@ class ToolRegistry:
                 if name in self._tools or name in self._mcp_tools:
                     raise AgentError(f"Tool name conflict: {name}")
                 self._mcp_tools[name] = (client, schema)
+                log.debug("MCP tool registered: %s", name)
+        log.debug("Total tools: %d local + %d MCP", len(self._tools), len(self._mcp_tools))
 
     def clear_mcp_tools(self) -> None:
+        if self._mcp_tools:
+            log.debug("Clearing %d MCP tools", len(self._mcp_tools))
         self._mcp_tools.clear()
 
     def __contains__(self, name: str) -> bool:
@@ -97,6 +105,7 @@ class ToolRegistry:
     async def call(self, name: str, arguments: dict[str, Any]) -> str:
         if name in self._mcp_tools:
             client, _schema = self._mcp_tools[name]
+            log.debug("Calling MCP tool: %s(%s)", name, arguments)
             return await client.call_tool(name, arguments)
         if name not in self._tools:
             raise KeyError(f"Tool not found: {name}")

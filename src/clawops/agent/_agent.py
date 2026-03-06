@@ -147,6 +147,7 @@ class ClawOpsAgent:
 
         mcp_clients: list[MCPClient] = []
         if self._mcp_servers:
+            log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
             for server_config in self._mcp_servers:
                 mcp_clients.append(MCPClient(server_config))
             await asyncio.gather(*[c.connect() for c in mcp_clients])
