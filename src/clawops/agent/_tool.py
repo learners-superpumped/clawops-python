@@ -1,0 +1,98 @@
+"""function_tool 데코레이터와 ToolRegistry.
+
+OpenAI Realtime API의 tool 스키마를 자동 생성하고,
+등록된 핸들러를 이름으로 호출한다.
+"""
+from __future__ import annotations
+
+import inspect
+from dataclasses import dataclass
+from typing import Any, Callable, Awaitable
+
+
+_PY_TYPE_TO_JSON: dict[type, str] = {
+    str: "string",
+    int: "integer",
+    float: "number",
+    bool: "boolean",
+}
+
+
+@dataclass
+class FunctionTool:
+    name: str
+    description: str
+    parameters: dict[str, Any]
+    required: list[str]
+    handler: Callable[..., Awaitable[str]]
+
+
+class ToolRegistry:
+    def __init__(self) -> None:
+        self._tools: dict[str, FunctionTool] = {}
+
+    def register(self, fn: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
+        sig = inspect.signature(fn)
+        hints = {k: v for k, v in inspect.get_annotations(fn).items() if k != "return"}
+
+        properties: dict[str, Any] = {}
+        required: list[str] = []
+
+        for param_name, param in sig.parameters.items():
+            if param_name == "self":
+                continue
+            py_type = hints.get(param_name, str)
+            json_type = _PY_TYPE_TO_JSON.get(py_type, "string")
+            properties[param_name] = {"type": json_type}
+            if param.default is inspect.Parameter.empty:
+                required.append(param_name)
+
+        tool = FunctionTool(
+            name=fn.__name__,
+            description=(fn.__doc__ or "").strip(),
+            parameters=properties,
+            required=required,
+            handler=fn,
+        )
+        self._tools[fn.__name__] = tool
+        return fn
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._tools
+
+    def __getitem__(self, name: str) -> FunctionTool:
+        return self._tools[name]
+
+    def to_openai_tools(self) -> list[dict[str, Any]]:
+        result = []
+        for tool in self._tools.values():
+            result.append({
+                "type": "function",
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": tool.parameters,
+                    "required": tool.required,
+                },
+            })
+        return result
+
+    async def call(self, name: str, arguments: dict[str, Any]) -> str:
+        if name not in self._tools:
+            raise KeyError(f"Tool not found: {name}")
+        tool = self._tools[name]
+        hints = {k: v for k, v in inspect.get_annotations(tool.handler).items() if k != "return"}
+        converted = {}
+        for k, v in arguments.items():
+            target_type = hints.get(k, str)
+            try:
+                converted[k] = target_type(v)
+            except (ValueError, TypeError):
+                converted[k] = v
+        return await tool.handler(**converted)
+
+
+def function_tool(fn: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
+    """Standalone decorator (ClawOpsAgent 없이 사용 시). 실제로는 @agent.tool 권장."""
+    return fn

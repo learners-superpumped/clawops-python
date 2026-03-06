@@ -46,6 +46,23 @@ dev = [
     "respx>=0.20",
     "mypy>=1.0",
     "ruff>=0.1",
+    "aiohttp>=3.9.0,<4",
+]
+
+# Agent
+agent = ["aiohttp>=3.9.0,<4"]
+openai-realtime = ["clawops[agent]"]
+openai-llm = ["clawops[agent]", "openai>=1.0.0"]
+deepgram = ["clawops[agent]", "deepgram-sdk>=3.0.0"]
+elevenlabs = ["clawops[agent]", "elevenlabs>=1.0.0"]
+google-tts = ["clawops[agent]", "google-cloud-texttospeech>=2.0.0"]
+mcp = ["clawops[agent]", "mcp>=1.0.0"]
+agent-all = [
+    "clawops[openai-realtime]",
+    "clawops[openai-llm]",
+    "clawops[deepgram]",
+    "clawops[elevenlabs]",
+    "clawops[mcp]",
 ]
 
 [tool.pytest.ini_options]

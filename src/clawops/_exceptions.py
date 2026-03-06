@@ -145,3 +145,11 @@ def _make_status_error(*, response: httpx.Response) -> APIStatusError:
             err_cls = APIStatusError
 
     return err_cls(message=message, response=response, body=body)
+
+
+class AgentError(ClawOpsError):
+    """Agent 관련 에러의 베이스 클래스."""
+
+
+class AgentConnectionError(AgentError):
+    """Agent WebSocket 연결 실패."""
