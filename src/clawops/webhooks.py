@@ -15,7 +15,7 @@ class Webhooks:
     """ClawOps webhook 서명 검증 유틸리티.
 
     ClawOps는 webhook 요청 시 X-Signature 헤더에
-    HMAC-SHA1 서명을 포함합니다.
+    HMAC-SHA256 서명을 포함합니다.
 
     Example::
 
@@ -57,5 +57,5 @@ class Webhooks:
     def _compute_signature(url: str, params: dict[str, str], signing_key: str) -> str:
         sorted_params = "".join(f"{k}{v}" for k, v in sorted(params.items()))
         data_to_sign = url + sorted_params
-        digest = hmac.new(signing_key.encode("utf-8"), data_to_sign.encode("utf-8"), hashlib.sha1).digest()
+        digest = hmac.new(signing_key.encode("utf-8"), data_to_sign.encode("utf-8"), hashlib.sha256).digest()
         return base64.b64encode(digest).decode("utf-8")

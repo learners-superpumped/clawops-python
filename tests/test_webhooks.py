@@ -15,7 +15,7 @@ def webhooks():
 def _compute_signature(url: str, params: dict[str, str], signing_key: str) -> str:
     sorted_params = "".join(f"{k}{v}" for k, v in sorted(params.items()))
     data = url + sorted_params
-    digest = hmac.new(signing_key.encode(), data.encode(), hashlib.sha1).digest()
+    digest = hmac.new(signing_key.encode(), data.encode(), hashlib.sha256).digest()
     return base64.b64encode(digest).decode()
 
 

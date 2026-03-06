@@ -111,7 +111,7 @@ class TestSyncIntegration:
             params = {"CallId": "CA123", "CallStatus": "completed"}
             key = "sk_sign"
             sorted_p = "".join(f"{k}{v}" for k, v in sorted(params.items()))
-            sig = base64.b64encode(hmac.new(key.encode(), (url + sorted_p).encode(), hashlib.sha1).digest()).decode()
+            sig = base64.b64encode(hmac.new(key.encode(), (url + sorted_p).encode(), hashlib.sha256).digest()).decode()
             assert client.webhooks.verify(url=url, params=params, signature=sig, signing_key=key) is True
 
 
