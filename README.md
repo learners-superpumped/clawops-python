@@ -8,10 +8,48 @@
 ## 설치
 
 ```bash
+# REST API SDK만 사용
 pip install clawops
+
+# AI Agent 포함
+pip install clawops[agent]
+
+# 특정 프로바이더 포함
+pip install clawops[agent,openai-llm,deepgram,elevenlabs,mcp]
+
+# 전체 설치
+pip install clawops[agent-all]
 ```
 
-## 사용법
+## AI Agent (음성 에이전트)
+
+`ClawOpsAgent`를 사용하면 한 줄로 인바운드 전화를 AI로 처리할 수 있습니다. ngrok 없이 WebSocket 역방향 연결로 동작합니다.
+
+```python
+from clawops.agent import ClawOpsAgent
+
+agent = ClawOpsAgent(
+    from_="07012341234",          # 수신 번호
+    system_prompt="친절한 상담원입니다. 고객의 질문에 답변해주세요.",
+    voice="ash",                  # OpenAI 음성
+    language="ko",
+)
+
+@agent.tool
+async def check_order(order_id: str) -> str:
+    """주문 상태를 확인합니다."""
+    return "배송 완료"
+
+@agent.on("call_start")
+async def on_start(call):
+    print(f"통화 시작: {call.from_number} -> {call.to_number}")
+
+agent.listen()  # WebSocket 연결 후 인바운드 대기
+```
+
+> 자세한 사용법은 **[Agent 문서](docs/agent.md)** 를 참고하세요.
+
+## REST API 사용법
 
 ```python
 from clawops import ClawOps
@@ -201,12 +239,19 @@ client = ClawOps(
 | `CLAWOPS_API_KEY`    | API 키 (`sk_...`)      | 예 (생성자에 전달하지 않은 경우)            |
 | `CLAWOPS_ACCOUNT_ID` | 기본 계정 ID (`AC...`) | 예 (생성자에 전달하지 않은 경우)            |
 | `CLAWOPS_BASE_URL`   | API 기본 URL           | 아니오 (기본값: `https://api.claw-ops.com`) |
+| `OPENAI_API_KEY`     | OpenAI API 키          | Agent 사용 시 (생성자에 전달하지 않은 경우) |
+
+## 문서
+
+- **[AI Agent 가이드](docs/agent.md)** — 음성 에이전트 상세 사용법, 파이프라인 모드, MCP 연동
+- **[설계 문서](docs/plans/2026-03-06-clawops-agent-design.md)** — Agent 시스템 아키텍처 설계
 
 ## 요구사항
 
 - Python 3.9+
 - `httpx` >= 0.23.0
 - `pydantic` >= 2.0.0
+- `aiohttp` >= 3.9.0 (Agent 사용 시)
 
 ## 라이선스
 
