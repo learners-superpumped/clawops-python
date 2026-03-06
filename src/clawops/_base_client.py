@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from random import random
 from typing import Any, TypeVar
+from urllib.parse import urlparse
 
 import httpx
 import pydantic
@@ -25,6 +26,23 @@ from ._version import __version__
 
 _T = TypeVar("_T", bound=pydantic.BaseModel)
 
+_LOCALHOST_HOSTS = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "[::1]"})
+
+
+def _validate_base_url(url: str) -> str:
+    """base_url이 HTTPS를 사용하는지 검증합니다. localhost는 HTTP를 허용합니다."""
+    parsed = urlparse(url)
+    if parsed.scheme == "https":
+        return url
+    if parsed.scheme == "http" and parsed.hostname in _LOCALHOST_HOSTS:
+        return url
+    from ._exceptions import ClawOpsError
+
+    raise ClawOpsError(
+        f"base_url은 HTTPS를 사용해야 합니다 (받은 값: {url!r}). "
+        f"로컬 개발 시에는 http://localhost를 사용할 수 있습니다."
+    )
+
 
 class SyncAPIClient:
     """동기 HTTP 클라이언트 베이스. httpx.Client를 래핑하며 인증, 재시도, 타임아웃, 에러 매핑을 처리합니다."""
@@ -46,7 +64,7 @@ class SyncAPIClient:
         default_headers: dict[str, str] | None = None,
     ) -> None:
         self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+        self._base_url = _validate_base_url(base_url.rstrip("/"))
         self._max_retries = max_retries
 
         if isinstance(timeout, (int, float)):
@@ -205,7 +223,7 @@ class AsyncAPIClient:
         default_headers: dict[str, str] | None = None,
     ) -> None:
         self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
+        self._base_url = _validate_base_url(base_url.rstrip("/"))
         self._max_retries = max_retries
 
         if isinstance(timeout, (int, float)):

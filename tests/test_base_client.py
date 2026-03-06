@@ -4,7 +4,7 @@ import respx
 
 from clawops._base_client import SyncAPIClient, AsyncAPIClient
 from clawops._constants import DEFAULT_BASE_URL, DEFAULT_TIMEOUT
-from clawops._exceptions import AuthenticationError, NotFoundError
+from clawops._exceptions import AuthenticationError, ClawOpsError, NotFoundError
 from clawops._models import BaseModel
 
 
@@ -155,3 +155,33 @@ class TestAsyncAPIClient:
     async def test_context_manager(self):
         async with self._make_client() as client:
             assert client is not None
+
+
+class TestBaseUrlValidation:
+    def test_https_allowed(self):
+        client = SyncAPIClient(api_key="sk_test", base_url="https://api.example.com")
+        assert client._base_url == "https://api.example.com"
+        client.close()
+
+    def test_http_localhost_allowed(self):
+        client = SyncAPIClient(api_key="sk_test", base_url="http://localhost:8080")
+        assert client._base_url == "http://localhost:8080"
+        client.close()
+
+    def test_http_127_allowed(self):
+        client = SyncAPIClient(api_key="sk_test", base_url="http://127.0.0.1:3000")
+        assert client._base_url == "http://127.0.0.1:3000"
+        client.close()
+
+    def test_http_remote_rejected(self):
+        with pytest.raises(ClawOpsError, match="HTTPS"):
+            SyncAPIClient(api_key="sk_test", base_url="http://api.example.com")
+
+    def test_ftp_rejected(self):
+        with pytest.raises(ClawOpsError, match="HTTPS"):
+            SyncAPIClient(api_key="sk_test", base_url="ftp://api.example.com")
+
+    @pytest.mark.asyncio
+    async def test_async_http_remote_rejected(self):
+        with pytest.raises(ClawOpsError, match="HTTPS"):
+            AsyncAPIClient(api_key="sk_test", base_url="http://evil.example.com")
