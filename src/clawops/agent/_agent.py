@@ -11,6 +11,7 @@ from typing import Any, Callable, Awaitable
 
 from .._exceptions import AgentError
 from ._control_ws import ControlWebSocket
+from .mcp._client import MCPClient
 from ._media_ws import MediaWebSocket
 from ._session import CallSession
 from ._recorder import AudioRecorder
@@ -144,6 +145,13 @@ class ClawOpsAgent:
             recorder = AudioRecorder(self._recording_path, call.call_id)
             recorder.start()
 
+        mcp_clients: list[MCPClient] = []
+        if self._mcp_servers:
+            for server_config in self._mcp_servers:
+                mcp_clients.append(MCPClient(server_config))
+            await asyncio.gather(*[c.connect() for c in mcp_clients])
+            self._tool_registry.register_mcp_tools(mcp_clients)
+
         realtime = RealtimeSession(self._config, self._tool_registry, recorder=recorder)
 
         async def on_audio(pcm: bytes, ts: int) -> None:
@@ -170,6 +178,9 @@ class ClawOpsAgent:
             await media_ws.connect()
         finally:
             await realtime.stop()
+            if mcp_clients:
+                self._tool_registry.clear_mcp_tools()
+                await asyncio.gather(*[c.close() for c in mcp_clients], return_exceptions=True)
             if recorder:
                 recorder.stop()
             await call._emit("call_end")

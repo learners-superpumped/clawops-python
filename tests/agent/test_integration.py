@@ -78,6 +78,23 @@ async def test_call_session_lifecycle():
     assert session.duration > 0
 
 
+def test_agent_with_mcp_servers():
+    from clawops.agent.mcp import MCPServerStdio, MCPServerHTTP
+
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        system_prompt="테스트",
+        openai_api_key="sk-openai-test",
+        mcp_servers=[
+            MCPServerStdio("npx", args=["@mcp/server"]),
+            MCPServerHTTP("https://mcp.example.com"),
+        ],
+    )
+    assert len(agent._mcp_servers) == 2
+
+
 def test_all_imports():
     from clawops.agent import ClawOpsAgent
     from clawops.agent._tool import ToolRegistry
@@ -87,6 +104,6 @@ def test_all_imports():
     from clawops.agent._media_ws import MediaWebSocket
     from clawops.agent.pipeline import STT, LLM, TTS
     from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
-    from clawops.agent.mcp import MCPServerHTTP, MCPServerStdio
+    from clawops.agent.mcp import MCPServerHTTP, MCPServerStdio, MCPClient
     from clawops.agent.plugins.openai_realtime import OpenAIRealtimePlugin
     # All imports successful
