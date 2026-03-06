@@ -94,8 +94,8 @@ agent = ClawOpsAgent(
 
     # AI 설정
     system_prompt="상담원입니다.",      # AI 시스템 프롬프트
-    voice="ash",                      # 음성: ash, ballad, coral, sage, verse 등
-    model="gpt-4o-realtime-preview",  # OpenAI 모델
+    voice="marin",                    # 음성: marin, ash, ballad, coral, sage, verse 등
+    model="gpt-realtime-mini",        # OpenAI 모델
     language="ko",                    # 언어 (음성 인식용)
     eagerness="high",                 # 응답 적극성: low, medium, high, auto
     greeting=True,                    # 첫 인사 자동 생성 여부
@@ -109,7 +109,8 @@ agent = ClawOpsAgent(
 
 | 음성 | 특징 |
 |------|------|
-| `ash` | 기본값, 자연스러운 남성 음성 |
+| `marin` | 기본값, 자연스러운 여성 음성 |
+| `ash` | 자연스러운 남성 음성 |
 | `ballad` | 부드러운 남성 음성 |
 | `coral` | 밝은 여성 음성 |
 | `sage` | 차분한 여성 음성 |

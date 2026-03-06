@@ -31,7 +31,7 @@ from clawops.agent import ClawOpsAgent
 agent = ClawOpsAgent(
     from_="07012341234",          # 수신 번호
     system_prompt="친절한 상담원입니다. 고객의 질문에 답변해주세요.",
-    voice="ash",                  # OpenAI 음성
+    voice="marin",                # OpenAI 음성
     language="ko",
 )
 

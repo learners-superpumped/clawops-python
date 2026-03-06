@@ -7,8 +7,8 @@ def test_realtime_config_defaults():
         system_prompt="test",
         openai_api_key="sk-test",
     )
-    assert config.voice == "ash"
-    assert config.model == "gpt-4o-realtime-preview"
+    assert config.voice == "marin"
+    assert config.model == "gpt-realtime-mini"
     assert config.language == "ko"
     assert config.eagerness == "high"
     assert config.greeting is True

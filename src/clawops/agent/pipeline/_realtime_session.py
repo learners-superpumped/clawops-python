@@ -34,8 +34,8 @@ HANG_UP_TOOL = {
 class RealtimeConfig:
     system_prompt: str
     openai_api_key: str
-    voice: str = "ash"
-    model: str = "gpt-4o-realtime-preview"
+    voice: str = "marin"
+    model: str = "gpt-realtime-mini"
     language: str = "ko"
     eagerness: str = "high"
     greeting: bool = True
