@@ -1,6 +1,6 @@
 # ClawOps Python SDK
 
-[ClawOps Voice API](https://docs.claw-ops.com)의 공식 Python 라이브러리입니다.
+[ClawOps Voice API](https://api.claw-ops.com/docs)의 공식 Python 라이브러리입니다.
 
 [![PyPI version](https://img.shields.io/pypi/v/clawops.svg)](https://pypi.org/project/clawops/)
 [![Python 3.9+](https://img.shields.io/pypi/pyversions/clawops.svg)](https://pypi.org/project/clawops/)
@@ -146,16 +146,16 @@ except NotFoundError as e:
 
 모든 에러는 `ClawOpsError`를 상속합니다. HTTP 에러는 `status_code`, `response`, `body`, `request` 속성을 제공합니다.
 
-| 에러                        | 상태 코드 |
-| --------------------------- | --------- |
-| `BadRequestError`           | 400       |
-| `AuthenticationError`       | 401       |
-| `PermissionDeniedError`     | 403       |
-| `NotFoundError`             | 404       |
-| `ConflictError`             | 409       |
-| `UnprocessableEntityError`  | 422       |
-| `InternalServerError`       | 500+      |
-| `ServiceUnavailableError`   | 503       |
+| 에러                       | 상태 코드 |
+| -------------------------- | --------- |
+| `BadRequestError`          | 400       |
+| `AuthenticationError`      | 401       |
+| `PermissionDeniedError`    | 403       |
+| `NotFoundError`            | 404       |
+| `ConflictError`            | 409       |
+| `UnprocessableEntityError` | 422       |
+| `InternalServerError`      | 500+      |
+| `ServiceUnavailableError`  | 503       |
 
 ## 설정
 
@@ -196,11 +196,11 @@ client = ClawOps(
 
 ## 환경변수
 
-| 변수                 | 설명                       | 필수 여부                       |
-| -------------------- | -------------------------- | ------------------------------- |
-| `CLAWOPS_API_KEY`    | API 키 (`sk_...`)          | 예 (생성자에 전달하지 않은 경우) |
-| `CLAWOPS_ACCOUNT_ID` | 기본 계정 ID (`AC...`)     | 예 (생성자에 전달하지 않은 경우) |
-| `CLAWOPS_BASE_URL`   | API 기본 URL               | 아니오 (기본값: `https://api.claw-ops.com`) |
+| 변수                 | 설명                   | 필수 여부                                   |
+| -------------------- | ---------------------- | ------------------------------------------- |
+| `CLAWOPS_API_KEY`    | API 키 (`sk_...`)      | 예 (생성자에 전달하지 않은 경우)            |
+| `CLAWOPS_ACCOUNT_ID` | 기본 계정 ID (`AC...`) | 예 (생성자에 전달하지 않은 경우)            |
+| `CLAWOPS_BASE_URL`   | API 기본 URL           | 아니오 (기본값: `https://api.claw-ops.com`) |
 
 ## 요구사항
 
