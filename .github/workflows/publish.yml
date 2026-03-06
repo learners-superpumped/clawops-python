@@ -21,12 +21,35 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # PyPI Trusted Publisher
+      id-token: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(python -c "exec(open('src/clawops/_version.py').read()); print(__version__)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - run: pip install build
       - run: python -m build
+
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create git tag
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" dist/* \
+            --title "v${VERSION}" \
+            --generate-notes
