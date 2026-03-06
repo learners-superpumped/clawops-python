@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from ..._resource import AsyncAPIResource, SyncAPIResource
 from .credentials import AsyncSipCredentials, SipCredentials
-
-if TYPE_CHECKING:
-    from ..._base_client import AsyncAPIClient, SyncAPIClient
 
 __all__ = ["AsyncSip", "AsyncSipCredentials", "Sip", "SipCredentials"]
 
