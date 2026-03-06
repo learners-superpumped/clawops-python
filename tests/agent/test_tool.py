@@ -70,3 +70,90 @@ def test_tool_with_optional_params():
     params = schemas[0]["parameters"]
     assert params["required"] == ["query"]
     assert "limit" in params["properties"]
+
+
+# --- MCP Integration Tests ---
+
+from unittest.mock import AsyncMock, MagicMock
+from clawops._exceptions import AgentError
+
+
+def _make_mock_client(tools=None):
+    client = MagicMock()
+    client.tools = tools or [
+        {
+            "type": "function",
+            "name": "web_search",
+            "description": "Search the web",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        }
+    ]
+    client.has_tool = MagicMock(return_value=True)
+    client.call_tool = AsyncMock(return_value="result text")
+    return client
+
+
+def test_register_mcp_tools():
+    registry = ToolRegistry()
+    mock_client = _make_mock_client()
+
+    registry.register_mcp_tools([mock_client])
+
+    assert "web_search" in registry
+    schemas = registry.to_openai_tools()
+    names = [s["name"] for s in schemas]
+    assert "web_search" in names
+
+
+def test_name_conflict_raises_error():
+    registry = ToolRegistry()
+
+    @registry.register
+    async def web_search(query: str) -> str:
+        """Local search."""
+        return query
+
+    mock_client = _make_mock_client()
+
+    with pytest.raises(AgentError, match="Tool name conflict: web_search"):
+        registry.register_mcp_tools([mock_client])
+
+
+@pytest.mark.asyncio
+async def test_call_mcp_tool():
+    registry = ToolRegistry()
+    mock_client = _make_mock_client()
+    registry.register_mcp_tools([mock_client])
+
+    result = await registry.call("web_search", {"query": "hello"})
+
+    assert result == "result text"
+    mock_client.call_tool.assert_awaited_once_with("web_search", {"query": "hello"})
+
+
+def test_clear_mcp_tools():
+    registry = ToolRegistry()
+    mock_client = _make_mock_client()
+    registry.register_mcp_tools([mock_client])
+
+    assert "web_search" in registry
+    registry.clear_mcp_tools()
+    assert "web_search" not in registry
+
+
+def test_to_openai_tools_includes_mcp():
+    registry = ToolRegistry()
+
+    @registry.register
+    async def local_tool(x: str) -> str:
+        """A local tool."""
+        return x
+
+    mock_client = _make_mock_client()
+    registry.register_mcp_tools([mock_client])
+
+    schemas = registry.to_openai_tools()
+    names = [s["name"] for s in schemas]
+    assert "local_tool" in names
+    assert "web_search" in names
+    assert len(schemas) == 2

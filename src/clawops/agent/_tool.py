@@ -9,6 +9,8 @@ import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
 
+from .._exceptions import AgentError
+
 
 _PY_TYPE_TO_JSON: dict[type, str] = {
     str: "string",
@@ -30,6 +32,7 @@ class FunctionTool:
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, FunctionTool] = {}
+        self._mcp_tools: dict[str, tuple[Any, dict[str, Any]]] = {}
 
     def register(self, fn: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
         sig = inspect.signature(fn)
@@ -57,8 +60,19 @@ class ToolRegistry:
         self._tools[fn.__name__] = tool
         return fn
 
+    def register_mcp_tools(self, clients: list[Any]) -> None:
+        for client in clients:
+            for schema in client.tools:
+                name = schema["name"]
+                if name in self._tools or name in self._mcp_tools:
+                    raise AgentError(f"Tool name conflict: {name}")
+                self._mcp_tools[name] = (client, schema)
+
+    def clear_mcp_tools(self) -> None:
+        self._mcp_tools.clear()
+
     def __contains__(self, name: str) -> bool:
-        return name in self._tools
+        return name in self._tools or name in self._mcp_tools
 
     def __getitem__(self, name: str) -> FunctionTool:
         return self._tools[name]
@@ -76,9 +90,14 @@ class ToolRegistry:
                     "required": tool.required,
                 },
             })
+        for _client, schema in self._mcp_tools.values():
+            result.append(schema)
         return result
 
     async def call(self, name: str, arguments: dict[str, Any]) -> str:
+        if name in self._mcp_tools:
+            client, _schema = self._mcp_tools[name]
+            return await client.call_tool(name, arguments)
         if name not in self._tools:
             raise KeyError(f"Tool not found: {name}")
         tool = self._tools[name]
