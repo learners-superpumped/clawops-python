@@ -171,7 +171,10 @@ class RealtimeSession:
             args = json.loads(item.get("arguments", "{}"))
             result = await self._tools.call(func_name, args)
         except Exception as e:
+            log.error(f"Tool call failed: {func_name}: {e}")
             result = f"Error: {e}"
+
+        log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
 
         await self._send({
             "type": "conversation.item.create",
@@ -181,6 +184,7 @@ class RealtimeSession:
                 "output": str(result),
             },
         })
+        log.debug(f"Sent function_call_output for {func_name}, requesting response")
         await self._send({"type": "response.create"})
 
     async def _handle_truncation(self) -> None:
@@ -227,8 +231,8 @@ class RealtimeSession:
         if self._ws and not self._ws.closed:
             try:
                 await self._ws.send_str(json.dumps(data))
-            except Exception:
-                pass
+            except Exception as e:
+                log.error(f"WebSocket send failed ({data.get('type')}): {e}")
 
     async def stop(self) -> None:
         self._audio_queue.put_nowait(None)
