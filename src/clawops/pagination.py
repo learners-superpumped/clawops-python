@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T", bound=pydantic.BaseModel)
 
-
 class SyncPage(BaseModel, Generic[_T]):
     """동기 페이지네이션 컨테이너."""
 
