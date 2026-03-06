@@ -244,7 +244,6 @@ client = ClawOps(
 ## 문서
 
 - **[AI Agent 가이드](docs/agent.md)** — 음성 에이전트 상세 사용법, 파이프라인 모드, MCP 연동
-- **[설계 문서](docs/plans/2026-03-06-clawops-agent-design.md)** — Agent 시스템 아키텍처 설계
 
 ## 요구사항
 
