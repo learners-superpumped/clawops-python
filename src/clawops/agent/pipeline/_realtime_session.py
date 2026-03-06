@@ -15,6 +15,7 @@ from typing import Any
 import aiohttp
 
 from .._audio import pcm16_to_ulaw, ulaw_to_pcm16
+from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
 
@@ -42,7 +43,7 @@ class RealtimeConfig:
 
 
 class RealtimeSession:
-    def __init__(self, config: RealtimeConfig, tool_registry: ToolRegistry) -> None:
+    def __init__(self, config: RealtimeConfig, tool_registry: ToolRegistry, *, recorder: AudioRecorder | None = None) -> None:
         self._config = config
         self._tools = tool_registry
         self._ws: aiohttp.ClientWebSocketResponse | None = None
@@ -51,6 +52,7 @@ class RealtimeSession:
         self._last_assistant_item: str | None = None
         self._response_start_ts: int | None = None
         self._latest_media_ts: int = 0
+        self._recorder = recorder
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._tasks: list[asyncio.Task[Any]] = []
 
@@ -215,6 +217,8 @@ class RealtimeSession:
                     break
                 if self._call:
                     await self._call.send_audio(chunk)
+                if self._recorder:
+                    self._recorder.write_outbound(chunk)
                 await asyncio.sleep(0.02)
         except asyncio.CancelledError:
             pass

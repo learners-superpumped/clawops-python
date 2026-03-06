@@ -13,6 +13,7 @@ from .._exceptions import AgentError
 from ._control_ws import ControlWebSocket
 from ._media_ws import MediaWebSocket
 from ._session import CallSession
+from ._recorder import AudioRecorder
 from ._tool import ToolRegistry
 from .pipeline._base import STT, LLM, TTS
 from .pipeline._realtime_session import RealtimeConfig, RealtimeSession
@@ -39,6 +40,8 @@ class ClawOpsAgent:
         llm: LLM | None = None,
         tts: TTS | None = None,
         mcp_servers: list[Any] | None = None,
+        recording: bool = False,
+        recording_path: str = "./recordings",
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -75,6 +78,8 @@ class ClawOpsAgent:
         self._llm = llm
         self._tts = tts
         self._mcp_servers = mcp_servers or []
+        self._recording = recording
+        self._recording_path = recording_path
 
         self._tool_registry = ToolRegistry()
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
@@ -134,12 +139,22 @@ class ClawOpsAgent:
         asyncio.create_task(self._start_call_session(call, media_url))
 
     async def _start_call_session(self, call: CallSession, media_url: str) -> None:
-        realtime = RealtimeSession(self._config, self._tool_registry)
+        recorder: AudioRecorder | None = None
+        if self._recording:
+            recorder = AudioRecorder(self._recording_path, call.call_id)
+            recorder.start()
+
+        realtime = RealtimeSession(self._config, self._tool_registry, recorder=recorder)
+
+        async def on_audio(pcm: bytes, ts: int) -> None:
+            if recorder:
+                recorder.write_inbound(pcm)
+            await realtime.feed_audio(pcm, ts)
 
         media_ws = MediaWebSocket(
             url=media_url,
             api_key=self._api_key,
-            on_audio=lambda pcm, ts: realtime.feed_audio(pcm, ts),
+            on_audio=on_audio,
             on_start=lambda info: self._on_media_start(call, info),
             on_stop=lambda: self._on_media_stop(call, realtime),
         )
@@ -155,6 +170,8 @@ class ClawOpsAgent:
             await media_ws.connect()
         finally:
             await realtime.stop()
+            if recorder:
+                recorder.stop()
             await call._emit("call_end")
             self._active_sessions.pop(call.call_id, None)
 
