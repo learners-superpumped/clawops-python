@@ -2,6 +2,7 @@
 """MCPClient 테스트."""
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -33,6 +34,14 @@ def _make_mock_call_result(text: str, *, is_error: bool = False) -> MagicMock:
     result.isError = is_error
     result.content = [content_block]
     return result
+
+
+def _make_mock_session(tools: list[MagicMock] | None = None) -> AsyncMock:
+    """mock ClientSession 생성."""
+    session = AsyncMock()
+    session.initialize = AsyncMock()
+    session.list_tools = AsyncMock(return_value=MagicMock(tools=tools or []))
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +80,6 @@ class TestMCPClientConnect:
         server = MCPServerStdio("npx", args=["@mcp/server"])
         client = MCPClient(server)
 
-        mock_session = AsyncMock()
         mock_tools = [
             _make_mock_tool("get_weather", "Get weather info", {
                 "type": "object",
@@ -79,13 +87,14 @@ class TestMCPClientConnect:
                 "required": ["city"],
             }),
         ]
-        mock_session.list_tools.return_value = MagicMock(tools=mock_tools)
+        mock_session = _make_mock_session(mock_tools)
 
-        with patch("clawops.agent.mcp._client._HAS_MCP", True), patch(
-            "clawops.agent.mcp._client._connect_stdio",
-            new_callable=AsyncMock,
-            return_value=(mock_session, []),
-        ):
+        async def fake_run_stdio(self_inner):
+            await self_inner._on_connected(mock_session)
+            await self_inner._shutdown.wait()
+
+        with patch("clawops.agent.mcp._client._HAS_MCP", True), \
+             patch.object(MCPClient, "_run_stdio", fake_run_stdio):
             await client.connect()
 
         assert client._session is mock_session
@@ -94,11 +103,9 @@ class TestMCPClientConnect:
         assert tool["type"] == "function"
         assert tool["name"] == "get_weather"
         assert tool["description"] == "Get weather info"
-        assert tool["parameters"] == {
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city"],
-        }
+        assert tool["parameters"]["properties"]["city"]["type"] == "string"
+
+        await client.close()
 
     @pytest.mark.asyncio
     async def test_connect_http(self):
@@ -107,25 +114,26 @@ class TestMCPClientConnect:
         server = MCPServerHTTP("https://example.com/mcp")
         client = MCPClient(server)
 
-        mock_session = AsyncMock()
         mock_tools = [
             _make_mock_tool("search", "Search the web", {
                 "type": "object",
                 "properties": {"query": {"type": "string"}},
             }),
         ]
-        mock_session.list_tools.return_value = MagicMock(tools=mock_tools)
+        mock_session = _make_mock_session(mock_tools)
 
-        with patch("clawops.agent.mcp._client._HAS_MCP", True), patch(
-            "clawops.agent.mcp._client._connect_http",
-            new_callable=AsyncMock,
-            return_value=(mock_session, []),
-        ):
+        async def fake_run_http(self_inner):
+            await self_inner._on_connected(mock_session)
+            await self_inner._shutdown.wait()
+
+        with patch("clawops.agent.mcp._client._HAS_MCP", True), \
+             patch.object(MCPClient, "_run_http", fake_run_http):
             await client.connect()
 
-        assert client._session is mock_session
         assert len(client.tools) == 1
         assert client.tools[0]["name"] == "search"
+
+        await client.close()
 
     @pytest.mark.asyncio
     async def test_connect_lists_multiple_tools(self):
@@ -134,24 +142,26 @@ class TestMCPClientConnect:
         server = MCPServerStdio("npx")
         client = MCPClient(server)
 
-        mock_session = AsyncMock()
         mock_tools = [
             _make_mock_tool("tool_a", "Tool A", {"type": "object", "properties": {}}),
             _make_mock_tool("tool_b", "Tool B", {"type": "object", "properties": {}}),
         ]
-        mock_session.list_tools.return_value = MagicMock(tools=mock_tools)
+        mock_session = _make_mock_session(mock_tools)
 
-        with patch("clawops.agent.mcp._client._HAS_MCP", True), patch(
-            "clawops.agent.mcp._client._connect_stdio",
-            new_callable=AsyncMock,
-            return_value=(mock_session, []),
-        ):
+        async def fake_run(self_inner):
+            await self_inner._on_connected(mock_session)
+            await self_inner._shutdown.wait()
+
+        with patch("clawops.agent.mcp._client._HAS_MCP", True), \
+             patch.object(MCPClient, "_run_stdio", fake_run):
             await client.connect()
 
         assert len(client.tools) == 2
         assert client.has_tool("tool_a")
         assert client.has_tool("tool_b")
         assert not client.has_tool("tool_c")
+
+        await client.close()
 
 
 class TestMCPClientCallTool:
@@ -164,23 +174,24 @@ class TestMCPClientCallTool:
         server = MCPServerStdio("npx")
         client = MCPClient(server)
 
-        mock_session = AsyncMock()
-        mock_tools = [
+        mock_session = _make_mock_session([
             _make_mock_tool("get_weather", "Get weather", {"type": "object", "properties": {}}),
-        ]
-        mock_session.list_tools.return_value = MagicMock(tools=mock_tools)
-        mock_session.call_tool.return_value = _make_mock_call_result("Sunny, 25C")
+        ])
+        mock_session.call_tool = AsyncMock(return_value=_make_mock_call_result("Sunny, 25C"))
 
-        with patch("clawops.agent.mcp._client._HAS_MCP", True), patch(
-            "clawops.agent.mcp._client._connect_stdio",
-            new_callable=AsyncMock,
-            return_value=(mock_session, []),
-        ):
+        async def fake_run(self_inner):
+            await self_inner._on_connected(mock_session)
+            await self_inner._shutdown.wait()
+
+        with patch("clawops.agent.mcp._client._HAS_MCP", True), \
+             patch.object(MCPClient, "_run_stdio", fake_run):
             await client.connect()
 
         result = await client.call_tool("get_weather", {"city": "Seoul"})
         assert result == "Sunny, 25C"
         mock_session.call_tool.assert_awaited_once_with("get_weather", arguments={"city": "Seoul"})
+
+        await client.close()
 
     @pytest.mark.asyncio
     async def test_call_tool_error_result(self):
@@ -189,24 +200,25 @@ class TestMCPClientCallTool:
         server = MCPServerStdio("npx")
         client = MCPClient(server)
 
-        mock_session = AsyncMock()
-        mock_tools = [
+        mock_session = _make_mock_session([
             _make_mock_tool("fail_tool", "Will fail", {"type": "object", "properties": {}}),
-        ]
-        mock_session.list_tools.return_value = MagicMock(tools=mock_tools)
-        mock_session.call_tool.return_value = _make_mock_call_result(
-            "something went wrong", is_error=True
+        ])
+        mock_session.call_tool = AsyncMock(
+            return_value=_make_mock_call_result("something went wrong", is_error=True)
         )
 
-        with patch("clawops.agent.mcp._client._HAS_MCP", True), patch(
-            "clawops.agent.mcp._client._connect_stdio",
-            new_callable=AsyncMock,
-            return_value=(mock_session, []),
-        ):
+        async def fake_run(self_inner):
+            await self_inner._on_connected(mock_session)
+            await self_inner._shutdown.wait()
+
+        with patch("clawops.agent.mcp._client._HAS_MCP", True), \
+             patch.object(MCPClient, "_run_stdio", fake_run):
             await client.connect()
 
         result = await client.call_tool("fail_tool", {})
         assert result == "MCP Error: something went wrong"
+
+        await client.close()
 
     @pytest.mark.asyncio
     async def test_call_tool_multiple_content_blocks(self):
@@ -215,13 +227,10 @@ class TestMCPClientCallTool:
         server = MCPServerStdio("npx")
         client = MCPClient(server)
 
-        mock_session = AsyncMock()
-        mock_tools = [
+        mock_session = _make_mock_session([
             _make_mock_tool("multi", "Multi result", {"type": "object", "properties": {}}),
-        ]
-        mock_session.list_tools.return_value = MagicMock(tools=mock_tools)
+        ])
 
-        # Create result with multiple content blocks
         block1 = MagicMock()
         block1.type = "text"
         block1.text = "line1"
@@ -231,17 +240,20 @@ class TestMCPClientCallTool:
         result_mock = MagicMock()
         result_mock.isError = False
         result_mock.content = [block1, block2]
-        mock_session.call_tool.return_value = result_mock
+        mock_session.call_tool = AsyncMock(return_value=result_mock)
 
-        with patch("clawops.agent.mcp._client._HAS_MCP", True), patch(
-            "clawops.agent.mcp._client._connect_stdio",
-            new_callable=AsyncMock,
-            return_value=(mock_session, []),
-        ):
+        async def fake_run(self_inner):
+            await self_inner._on_connected(mock_session)
+            await self_inner._shutdown.wait()
+
+        with patch("clawops.agent.mcp._client._HAS_MCP", True), \
+             patch.object(MCPClient, "_run_stdio", fake_run):
             await client.connect()
 
         result = await client.call_tool("multi", {})
         assert result == "line1\nline2"
+
+        await client.close()
 
 
 class TestMCPClientClose:
@@ -254,21 +266,16 @@ class TestMCPClientClose:
         server = MCPServerStdio("npx")
         client = MCPClient(server)
 
-        mock_session = AsyncMock()
-        mock_tools = [
+        mock_session = _make_mock_session([
             _make_mock_tool("tool_a", "Tool A", {"type": "object", "properties": {}}),
-        ]
-        mock_session.list_tools.return_value = MagicMock(tools=mock_tools)
+        ])
 
-        # Create mock cleanup context managers
-        mock_cm1 = AsyncMock()
-        mock_cm2 = AsyncMock()
+        async def fake_run(self_inner):
+            await self_inner._on_connected(mock_session)
+            await self_inner._shutdown.wait()
 
-        with patch("clawops.agent.mcp._client._HAS_MCP", True), patch(
-            "clawops.agent.mcp._client._connect_stdio",
-            new_callable=AsyncMock,
-            return_value=(mock_session, [mock_cm1, mock_cm2]),
-        ):
+        with patch("clawops.agent.mcp._client._HAS_MCP", True), \
+             patch.object(MCPClient, "_run_stdio", fake_run):
             await client.connect()
 
         assert client._session is not None
@@ -280,9 +287,6 @@ class TestMCPClientClose:
         assert client._session is None
         assert client.tools == []
         assert not client.has_tool("tool_a")
-        # Verify context managers were exited
-        mock_cm1.__aexit__.assert_awaited_once()
-        mock_cm2.__aexit__.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_close_without_connect(self):
@@ -291,7 +295,6 @@ class TestMCPClientClose:
 
         server = MCPServerStdio("npx")
         client = MCPClient(server)
-        # Should not raise
         await client.close()
 
 

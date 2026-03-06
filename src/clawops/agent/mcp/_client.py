@@ -1,6 +1,7 @@
 """MCPClient — MCP 서버와의 연결을 관리하는 런타임 클라이언트."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -20,39 +21,6 @@ except ImportError:
     _HAS_MCP = False
 
 
-async def _connect_stdio(server: MCPServerStdio) -> tuple[Any, list[Any]]:
-    """Stdio 기반 MCP 서버에 연결하고 (session, cleanup_list)를 반환한다."""
-    params = StdioServerParameters(
-        command=server.command,
-        args=server.args,
-        env=server.env if server.env else None,
-    )
-
-    cm_stdio = stdio_client(params)
-    read_write = await cm_stdio.__aenter__()
-    read_stream, write_stream = read_write
-
-    cm_session = ClientSession(read_stream, write_stream)
-    session = await cm_session.__aenter__()
-    await session.initialize()
-
-    # cleanup_list: 역순으로 __aexit__ 호출해야 함
-    return session, [cm_session, cm_stdio]
-
-
-async def _connect_http(server: MCPServerHTTP) -> tuple[Any, list[Any]]:
-    """HTTP/SSE 기반 MCP 서버에 연결하고 (session, cleanup_list)를 반환한다."""
-    cm_http = streamable_http_client(server.url, headers=server.headers)
-    read_write = await cm_http.__aenter__()
-    read_stream, write_stream, _ = read_write
-
-    cm_session = ClientSession(read_stream, write_stream)
-    session = await cm_session.__aenter__()
-    await session.initialize()
-
-    return session, [cm_session, cm_http]
-
-
 def _mcp_tool_to_openai(tool: Any) -> dict:
     """MCP tool 스키마를 OpenAI Realtime function tool 형식으로 변환한다."""
     return {
@@ -66,13 +34,8 @@ def _mcp_tool_to_openai(tool: Any) -> dict:
 class MCPClient:
     """MCP 서버와의 연결을 관리하는 런타임 클라이언트.
 
-    사용 예시::
-
-        client = MCPClient(MCPServerStdio("npx", args=["@mcp/server"]))
-        await client.connect()
-        tools = client.tools        # OpenAI function tool 형식
-        result = await client.call_tool("get_weather", {"city": "Seoul"})
-        await client.close()
+    async with 블록 대신 백그라운드 Task에서 context manager를 유지하여
+    anyio cancel scope 문제를 회피한다.
     """
 
     def __init__(self, server: MCPServerStdio | MCPServerHTTP) -> None:
@@ -80,7 +43,10 @@ class MCPClient:
         self._session: Any | None = None
         self._tools: list[dict] = []
         self._tool_names: set[str] = set()
-        self._cleanup_list: list[Any] = []
+        self._ready = asyncio.Event()
+        self._shutdown = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+        self._error: Exception | None = None
 
     async def connect(self) -> None:
         """MCP 서버에 연결하고 사용 가능한 도구 목록을 가져온다."""
@@ -89,36 +55,72 @@ class MCPClient:
                 "MCP 서버를 사용하려면 pip install clawops[mcp] 를 실행하세요."
             )
 
-        if isinstance(self._server, MCPServerStdio):
-            log.debug("MCP connecting (stdio): %s %s", self._server.command, self._server.args)
-            session, cleanup = await _connect_stdio(self._server)
-        else:
-            log.debug("MCP connecting (http): %s", self._server.url)
-            session, cleanup = await _connect_http(self._server)
+        self._task = asyncio.create_task(self._run())
+        await self._ready.wait()
 
+        if self._error:
+            raise self._error
+
+    async def _run(self) -> None:
+        """백그라운드 Task: async with로 context manager를 유지한다."""
+        try:
+            if isinstance(self._server, MCPServerStdio):
+                log.debug("MCP connecting (stdio): %s %s", self._server.command, self._server.args)
+                await self._run_stdio()
+            else:
+                log.debug("MCP connecting (http): %s", self._server.url)
+                await self._run_http()
+        except Exception as e:
+            self._error = AgentError(f"MCP 서버 연결 실패: {e}")
+            self._ready.set()
+
+    async def _run_stdio(self) -> None:
+        params = StdioServerParameters(
+            command=self._server.command,
+            args=self._server.args,
+            env=self._server.env if self._server.env else None,
+        )
+        async with stdio_client(params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                await self._on_connected(session)
+                await self._shutdown.wait()
+
+    async def _run_http(self) -> None:
+        async with streamable_http_client(
+            self._server.url,
+            headers=self._server.headers if self._server.headers else None,
+        ) as (read_stream, write_stream, _):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                await self._on_connected(session)
+                await self._shutdown.wait()
+
+    async def _on_connected(self, session: Any) -> None:
         self._session = session
-        self._cleanup_list = cleanup
-
-        result = await self._session.list_tools()
+        result = await session.list_tools()
         self._tools = [_mcp_tool_to_openai(t) for t in result.tools]
         self._tool_names = {t.name for t in result.tools}
-
         log.info("MCP 서버 연결 완료: %d개 도구 발견", len(self._tools))
         log.debug("MCP tools: %s", list(self._tool_names))
+        self._ready.set()
 
     async def close(self) -> None:
         """연결을 종료하고 리소스를 정리한다."""
         log.debug("MCP closing: %s", self._server)
-        for cm in self._cleanup_list:
+        self._shutdown.set()
+        if self._task and not self._task.done():
             try:
-                await cm.__aexit__(None, None, None)
-            except Exception:
-                log.debug("MCP cleanup 중 예외 발생", exc_info=True)
-
+                await asyncio.wait_for(self._task, timeout=5.0)
+            except (asyncio.TimeoutError, Exception):
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
         self._session = None
         self._tools = []
         self._tool_names = set()
-        self._cleanup_list = []
 
     @property
     def tools(self) -> list[dict]:
