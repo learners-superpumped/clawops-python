@@ -297,7 +297,7 @@ agent = ClawOpsAgent(
 
 ## MCP 서버 연동
 
-[Model Context Protocol](https://modelcontextprotocol.io/) 서버를 연결하여 AI에게 외부 도구를 제공할 수 있습니다.
+MCP 서버를 연결하여 AI에게 외부 도구를 제공할 수 있습니다.
 
 ### 설치
 
