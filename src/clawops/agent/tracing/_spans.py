@@ -22,6 +22,7 @@ try:
     from opentelemetry import trace as _otel_trace
     _has_otel = True
 except ImportError:
+    _otel_trace = None  # type: ignore[assignment]
     _has_otel = False
 
 
