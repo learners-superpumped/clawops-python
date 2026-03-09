@@ -1,7 +1,7 @@
 """Media WebSocket: per-call 오디오 스트림.
 
-ClawOps stream-handler.js 프로토콜을 구현한다:
-connected -> start -> media (PCM16 8kHz base64) -> stop
+ClawOps VoiceML Stream 프로토콜을 구현한다:
+connected -> start -> media (PCM16 8kHz base64) -> mark -> stop
 """
 from __future__ import annotations
 
@@ -53,12 +53,14 @@ class MediaWebSocket:
         on_audio: Callable[[bytes, int], Awaitable[None]],
         on_start: Callable[[dict[str, Any]], Awaitable[None]],
         on_stop: Callable[[], Awaitable[None]],
+        on_mark: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self._url = url
         self._api_key = api_key
         self._on_audio = on_audio
         self._on_start = on_start
         self._on_stop = on_stop
+        self._on_mark = on_mark
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -87,6 +89,9 @@ class MediaWebSocket:
                     elif event == "stop":
                         await self._on_stop()
                         break
+                    elif event == "mark":
+                        if self._on_mark and "mark" in data:
+                            await self._on_mark(data["mark"].get("name", ""))
                 elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                     break
         finally:
@@ -104,8 +109,15 @@ class MediaWebSocket:
         if self._ws and not self._ws.closed:
             await self._ws.send_str(json.dumps({"event": "clear"}))
 
+    async def send_mark(self, name: str) -> None:
+        if self._ws and not self._ws.closed:
+            await self._ws.send_str(json.dumps({
+                "event": "mark",
+                "mark": {"name": name},
+            }))
+
     async def _send_loop(self) -> None:
-        """오디오 청크를 20ms 간격으로 전송."""
+        """오디오 청크를 플랫폼으로 전송 (pacing은 플랫폼이 처리)."""
         try:
             while True:
                 chunk = await self._audio_queue.get()
@@ -114,7 +126,6 @@ class MediaWebSocket:
                 if self._ws and not self._ws.closed:
                     msg = build_media_response(chunk)
                     await self._ws.send_str(json.dumps(msg))
-                    await asyncio.sleep(0.02)
         except asyncio.CancelledError:
             pass
 
