@@ -187,6 +187,39 @@ number = client.numbers.update("07012340001", webhook_url="https://my-app.com/we
 client.numbers.delete("07012340001")
 ```
 
+### 메시지 (Messages)
+
+```python
+# SMS 발송
+msg = client.messages.create(
+    to="01012345678",
+    from_="07052358010",
+    body="안녕하세요",
+)
+print(msg.message_id)
+
+# MMS 발송
+msg = client.messages.create(
+    to="01012345678",
+    from_="07052358010",
+    body="사진 첨부",
+    type="mms",
+    subject="제목",
+)
+
+# 메시지 목록 조회 (필터링)
+page = client.messages.list(type="sms", status="sent", page=0, page_size=20)
+for msg in page:
+    print(msg.message_id, msg.status)
+
+# 모든 메시지를 자동으로 순회
+for msg in client.messages.list().auto_paging_iter():
+    print(msg.message_id)
+
+# 특정 메시지 조회
+msg = client.messages.get("MG0123456789abcdef")
+```
+
 ### 멀티 계정 접근
 
 ```python
@@ -194,6 +227,7 @@ client.numbers.delete("07012340001")
 other = client.accounts("AC_other_account_id")
 other.calls.list()
 other.numbers.list()
+other.messages.list()
 ```
 
 ## 비동기 사용법
@@ -214,6 +248,11 @@ async with AsyncClawOps(api_key="sk_...", account_id="AC1a2b3c4d") as client:
     page = await client.calls.list(status="completed")
     async for call in page.auto_paging_iter():
         print(call.call_id)
+
+    # 메시지 발송
+    msg = await client.messages.create(
+        to="01012345678", from_="07052358010", body="안녕하세요",
+    )
 ```
 
 ## 웹훅 서명 검증
