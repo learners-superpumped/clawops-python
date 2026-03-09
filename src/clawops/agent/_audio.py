@@ -1,7 +1,8 @@
-"""G.711 mu-law codec: PCM16 (signed 16-bit LE) <-> ulaw 변환.
+"""오디오 변환 유틸리티.
 
 ClawOps Stream 프로토콜은 PCM16 8kHz를 사용하고,
-OpenAI Realtime API는 g711_ulaw 포맷을 사용한다.
+OpenAI Realtime API는 pcm16 24kHz 포맷을 사용한다.
+리샘플링(8kHz↔24kHz)과 G.711 mu-law 코덱을 제공한다.
 """
 from __future__ import annotations
 
@@ -98,3 +99,33 @@ def ulaw_to_pcm16(ulaw: bytes) -> bytes:
         return b""
     samples = [_DECODE_TABLE[b] for b in ulaw]
     return struct.pack(f"<{len(samples)}h", *samples)
+
+
+# ─── Resample: 8kHz <-> 24kHz (선형 보간) ──────────────────────────────
+
+def resample_8k_to_24k(pcm16_8k: bytes) -> bytes:
+    """8kHz PCM16를 24kHz PCM16로 업샘플링 (선형 보간)."""
+    if not pcm16_8k:
+        return b""
+    n = len(pcm16_8k) // 2
+    samples = struct.unpack(f"<{n}h", pcm16_8k)
+    out = []
+    for i in range(n - 1):
+        s0, s1 = samples[i], samples[i + 1]
+        out.append(s0)
+        out.append((s0 * 2 + s1) // 3)
+        out.append((s0 + s1 * 2) // 3)
+    out.append(samples[-1])
+    out.append(samples[-1])
+    out.append(samples[-1])
+    return struct.pack(f"<{len(out)}h", *out)
+
+
+def resample_24k_to_8k(pcm16_24k: bytes) -> bytes:
+    """24kHz PCM16를 8kHz PCM16로 다운샘플링 (3:1 데시메이션)."""
+    if not pcm16_24k:
+        return b""
+    n = len(pcm16_24k) // 2
+    samples = struct.unpack(f"<{n}h", pcm16_24k)
+    out = [samples[i] for i in range(0, n, 3)]
+    return struct.pack(f"<{len(out)}h", *out)
