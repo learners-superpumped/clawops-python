@@ -140,10 +140,25 @@ class RealtimeSession:
             if self._response_start_ts is None:
                 self._response_start_ts = self._latest_media_ts
                 self._sent_audio_chunks = 0
+                self._diag_delta_count = 0
+                self._diag_last_delta_time = asyncio.get_event_loop().time()
             if event.get("item_id"):
                 self._last_assistant_item = event["item_id"]
 
             ulaw = base64.b64decode(event["delta"])
+            # 진단: OpenAI delta 도착 간격 (50개마다)
+            self._diag_delta_count = getattr(self, "_diag_delta_count", 0) + 1
+            now = asyncio.get_event_loop().time()
+            if self._diag_delta_count % 50 == 0:
+                elapsed = now - getattr(self, "_diag_last_delta_time", now)
+                log.info(
+                    f"[OAI-DIAG] delta#{self._diag_delta_count} "
+                    f"last50in={elapsed*1000:.0f}ms "
+                    f"avg={elapsed*1000/50:.1f}ms/delta "
+                    f"size={len(ulaw)}B "
+                    f"totalChunks={self._sent_audio_chunks}"
+                )
+                self._diag_last_delta_time = now
             if self._recorder:
                 self._recorder.write_raw_outbound(ulaw)
             # ulaw 직통 전송 — 중간 큐 없이 바로 플랫폼으로
