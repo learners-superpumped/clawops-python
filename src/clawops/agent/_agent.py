@@ -138,6 +138,7 @@ class ClawOpsAgent:
             on_call_failed=self._handle_failed,
         )
         self._control_ws_task = asyncio.create_task(self._control_ws.connect())
+        await self._control_ws.wait_connected()
 
     async def call(self, to: str, *, timeout: int = 60) -> CallSession:
         """발신 전화를 건다. CallSession을 즉시 리턴 (queued 상태)."""

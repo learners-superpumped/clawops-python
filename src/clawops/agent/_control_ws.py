@@ -49,6 +49,11 @@ class ControlWebSocket:
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
         self._running = False
+        self._connected = asyncio.Event()
+
+    async def wait_connected(self, timeout: float = 10.0) -> None:
+        """Control WS 연결이 완료될 때까지 대기한다."""
+        await asyncio.wait_for(self._connected.wait(), timeout)
 
     async def connect(self) -> None:
         self._running = True
@@ -56,12 +61,14 @@ class ControlWebSocket:
 
         while self._running:
             try:
+                self._connected.clear()
                 self._session = aiohttp.ClientSession()
                 self._ws = await self._session.ws_connect(
                     self._url,
                     headers={"Authorization": f"Bearer {self._api_key}"},
                     heartbeat=30.0,
                 )
+                self._connected.set()
                 log.info(f"Control WS connected: {self._url}")
                 delay = INITIAL_RECONNECT_DELAY
 
