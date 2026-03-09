@@ -85,7 +85,38 @@ logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("clawops.agent").setLevel(logging.DEBUG)
 ```
 
-> 자세한 사용법은 **[Agent 문서](docs/agent.md)** 를 참고하세요. (Tool, 이벤트, 통화 녹음, 파이프라인 모드, MCP 연동 등)
+### OpenTelemetry Tracing
+
+통화 흐름, MCP 도구 호출, LLM 세션을 OpenTelemetry로 추적할 수 있습니다.
+
+```bash
+pip install clawops[tracing]
+# + 원하는 exporter
+pip install opentelemetry-sdk opentelemetry-exporter-otlp
+```
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+from clawops.agent.tracing import TracingConfig
+
+agent = ClawOpsAgent(
+    ...,
+    tracing=TracingConfig(),
+)
+```
+
+**Span 계층:**
+- `call` → `mcp.connect` → `llm.session` → `tool.call` → `mcp.call_tool`
+
+> 자세한 사용법은 **[Agent 문서](docs/agent.md)** 를 참고하세요. (Tool, 이벤트, 통화 녹음, 파이프라인 모드, MCP 연동, Tracing 등)
 
 ## REST API 사용법
 

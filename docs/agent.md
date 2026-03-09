@@ -13,6 +13,7 @@
 - [통화 녹음](#통화-녹음)
 - [파이프라인 모드 (커스텀 STT/LLM/TTS)](#파이프라인-모드-커스텀-sttllmtts)
 - [MCP 서버 연동](#mcp-서버-연동)
+- [Tracing (OpenTelemetry)](#tracing-opentelemetry)
 - [CallSession](#callsession)
 - [환경변수](#환경변수)
 - [에러 처리](#에러-처리)
@@ -364,6 +365,98 @@ logging.getLogger("clawops.agent").setLevel(logging.DEBUG)
 ```
 
 MCP 연결, 도구 등록/호출, WebSocket 연결 등의 상세 로그를 확인할 수 있습니다.
+
+## Tracing (OpenTelemetry)
+
+통화 흐름, MCP 도구 호출, LLM 세션을 OpenTelemetry span으로 추적할 수 있습니다. `opentelemetry-api`가 설치되지 않은 환경에서는 자동으로 no-op 처리되므로 성능 영향이 없습니다.
+
+### 설치
+
+```bash
+pip install clawops[tracing]
+
+# + exporter (OTLP, Jaeger, Zipkin 등)
+pip install opentelemetry-sdk opentelemetry-exporter-otlp
+```
+
+### TracingConfig 옵션
+
+| 옵션 | 타입 | 기본값 | 설명 |
+|------|------|--------|------|
+| `enabled` | `bool` | `True` | Tracing 활성화 여부 |
+| `service_name` | `str` | `"clawops-agent"` | OTEL 서비스 이름 |
+| `tracer_provider` | `TracerProvider \| None` | `None` | 커스텀 TracerProvider (None이면 글로벌 사용) |
+
+### 사용법
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+# 1. TracerProvider 설정
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+# 2. Agent에 TracingConfig 전달
+from clawops.agent import ClawOpsAgent
+from clawops.agent.tracing import TracingConfig
+
+agent = ClawOpsAgent(
+    from_="07012341234",
+    system_prompt="상담원입니다.",
+    tracing=TracingConfig(),  # 기본 설정
+)
+
+# 또는 커스텀 TracerProvider 사용
+agent = ClawOpsAgent(
+    from_="07012341234",
+    system_prompt="상담원입니다.",
+    tracing=TracingConfig(
+        service_name="my-call-center",
+        tracer_provider=provider,
+    ),
+)
+
+agent.listen()
+```
+
+### Span 계층 구조
+
+통화 1건에 대해 다음과 같은 span 트리가 생성됩니다:
+
+```
+call (call.id, call.from, call.to, call.duration_ms)
+├── mcp.connect (mcp.server.type, mcp.server.command|mcp.server.url, mcp.tools.count)
+├── llm.session (gen_ai.system, gen_ai.request.model, gen_ai.request.voice)
+│   └── llm.generation
+├── tool.call (tool.name, tool.source, tool.duration_ms)
+│   └── mcp.call_tool (mcp.tool.name, mcp.tool.is_error)   # MCP 도구인 경우
+└── tool.call (tool.name, tool.source, tool.duration_ms)    # 로컬 도구인 경우
+```
+
+### Span 목록 및 Attribute
+
+| Span | Attribute | 설명 |
+|------|-----------|------|
+| `call` | `call.id` | 통화 ID |
+| | `call.from` | 발신 번호 |
+| | `call.to` | 수신 번호 |
+| | `call.duration_ms` | 통화 시간 (ms) |
+| `mcp.connect` | `mcp.server.type` | 서버 유형 (`stdio` / `http`) |
+| | `mcp.server.command` | Stdio 명령어 |
+| | `mcp.server.url` | HTTP 서버 URL |
+| | `mcp.tools.count` | 발견된 도구 수 |
+| `llm.session` | `gen_ai.system` | LLM 시스템 (예: `openai`) |
+| | `gen_ai.request.model` | 모델명 |
+| | `gen_ai.request.voice` | 음성 이름 |
+| `tool.call` | `tool.name` | 도구 이름 |
+| | `tool.source` | 도구 출처 (`local` / `mcp`) |
+| | `tool.duration_ms` | 실행 시간 (ms) |
+| `mcp.call_tool` | `mcp.tool.name` | MCP 도구 이름 |
+| | `mcp.tool.is_error` | 에러 여부 |
 
 ## CallSession
 
