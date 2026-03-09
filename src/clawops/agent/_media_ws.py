@@ -53,14 +53,12 @@ class MediaWebSocket:
         on_audio: Callable[[bytes, int], Awaitable[None]],
         on_start: Callable[[dict[str, Any]], Awaitable[None]],
         on_stop: Callable[[], Awaitable[None]],
-        on_mark: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self._url = url
         self._api_key = api_key
         self._on_audio = on_audio
         self._on_start = on_start
         self._on_stop = on_stop
-        self._on_mark = on_mark
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -89,9 +87,6 @@ class MediaWebSocket:
                     elif event == "stop":
                         await self._on_stop()
                         break
-                    elif event == "mark":
-                        if self._on_mark and "mark" in data:
-                            await self._on_mark(data["mark"].get("name", ""))
                 elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                     break
         finally:
