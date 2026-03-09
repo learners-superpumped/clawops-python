@@ -93,6 +93,7 @@ class ClawOpsAgent:
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
         self._active_sessions: dict[str, CallSession] = {}
         self._control_ws: ControlWebSocket | None = None
+        self._control_ws_task: asyncio.Task[Any] | None = None
 
     def tool(self, fn: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
         return self._tool_registry.register(fn)
@@ -111,6 +112,32 @@ class ClawOpsAgent:
             log.info("Agent stopped by user")
 
     async def _run(self) -> None:
+        await self._ensure_control_ws()
+        if self._control_ws_task:
+            await self._control_ws_task
+
+    async def start(self) -> None:
+        """비블로킹 — Control WS 연결 + 수신 대기 시작."""
+        if self._control_ws is not None:
+            return
+        await self._ensure_control_ws()
+        log.info(f"ClawOpsAgent started on {self._from_number}")
+
+    async def stop(self) -> None:
+        """Control WS 닫기 + 활성 세션 정리."""
+        if self._control_ws:
+            await self._control_ws.close()
+            self._control_ws = None
+        if self._control_ws_task and not self._control_ws_task.done():
+            self._control_ws_task.cancel()
+            self._control_ws_task = None
+        self._active_sessions.clear()
+        log.info("ClawOpsAgent stopped")
+
+    async def _ensure_control_ws(self) -> None:
+        """Control WS가 없으면 연결한다."""
+        if self._control_ws is not None:
+            return
         self._control_ws = ControlWebSocket(
             base_url=self._base_url,
             api_key=self._api_key,
@@ -118,8 +145,45 @@ class ClawOpsAgent:
             number=self._from_number,
             on_call_incoming=self._handle_incoming,
             on_call_ended=self._handle_ended,
+            on_call_outbound_ready=self._handle_outbound_ready,
+            on_call_ringing=self._handle_ringing,
+            on_call_failed=self._handle_failed,
         )
-        await self._control_ws.connect()
+        self._control_ws_task = asyncio.create_task(self._control_ws.connect())
+
+    async def call(self, to: str, *, timeout: int = 60) -> CallSession:
+        """발신 전화를 건다. CallSession을 즉시 리턴 (queued 상태)."""
+        await self._ensure_control_ws()
+
+        import aiohttp as _aiohttp
+        url = f"{self._base_url}/v1/accounts/{self._account_id}/calls"
+        body = {"To": to, "From": self._from_number, "Timeout": timeout}
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        async with _aiohttp.ClientSession() as session:
+            async with session.post(url, json=body, headers=headers) as resp:
+                if resp.status != 201:
+                    error = await resp.json()
+                    raise AgentError(f"발신 실패 ({resp.status}): {error.get('error', '')}")
+                data = await resp.json()
+
+        call_session = CallSession(
+            call_id=data["callId"],
+            from_number=self._from_number,
+            to_number=to,
+            account_id=self._account_id,
+            direction="outbound",
+        )
+
+        for event, handlers in self._event_handlers.items():
+            for handler in handlers:
+                call_session.on(event, handler)
+
+        self._active_sessions[call_session.call_id] = call_session
+        log.info(f"Outbound call initiated: {self._from_number} -> {to} ({call_session.call_id})")
+        return call_session
 
     async def _handle_incoming(self, data: dict[str, Any]) -> None:
         call_id = data["callId"]
@@ -133,6 +197,7 @@ class ClawOpsAgent:
             from_number=from_number,
             to_number=self._from_number,
             account_id=self._account_id,
+            direction="inbound",
         )
 
         for event, handlers in self._event_handlers.items():
@@ -216,6 +281,34 @@ class ClawOpsAgent:
     async def _on_media_stop(self, call: CallSession, realtime: RealtimeSession) -> None:
         log.info(f"Media stream stopped: {call.call_id}")
         await realtime.stop()
+
+    async def _handle_outbound_ready(self, data: dict[str, Any]) -> None:
+        call_id = data["callId"]
+        media_url = data.get("mediaUrl", "")
+        call = self._active_sessions.get(call_id)
+        if not call:
+            log.warning(f"Unknown outbound call: {call_id}")
+            return
+        call.status = "in-progress"
+        log.info(f"Outbound call answered: {call.from_number} -> {call.to_number} ({call_id})")
+        asyncio.create_task(self._start_call_session(call, media_url))
+
+    async def _handle_ringing(self, data: dict[str, Any]) -> None:
+        call_id = data.get("callId", "")
+        call = self._active_sessions.get(call_id)
+        if call:
+            call.status = "ringing"
+            log.info(f"Outbound call ringing: {call_id}")
+
+    async def _handle_failed(self, data: dict[str, Any]) -> None:
+        call_id = data.get("callId", "")
+        reason = data.get("reason", "failed")
+        call = self._active_sessions.get(call_id)
+        if call:
+            call.status = reason
+            log.info(f"Outbound call failed: {call_id} ({reason})")
+            await call._emit("call_failed", reason)
+            self._active_sessions.pop(call_id, None)
 
     async def _handle_ended(self, data: dict[str, Any]) -> None:
         call_id = data.get("callId", "")
