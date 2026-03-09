@@ -10,6 +10,7 @@
 - [설정 옵션](#설정-옵션)
 - [Tool (함수 호출)](#tool-함수-호출)
 - [이벤트 핸들러](#이벤트-핸들러)
+- [발신 (Outbound Call)](#발신-outbound-call)
 - [통화 녹음](#통화-녹음)
 - [파이프라인 모드 (커스텀 STT/LLM/TTS)](#파이프라인-모드-커스텀-sttllmtts)
 - [MCP 서버 연동](#mcp-서버-연동)
@@ -47,7 +48,13 @@ agent = ClawOpsAgent(
     system_prompt="친절한 고객센터 상담원입니다. 고객의 질문에 답변해주세요.",
 )
 
-agent.listen()
+async def main():
+    await agent.start()
+    # 수신 대기 중... (Ctrl+C로 종료)
+    await asyncio.Event().wait()
+
+import asyncio
+asyncio.run(main())
 ```
 
 이것만으로 `07012341234` 번호로 걸려오는 전화를 OpenAI Realtime API가 처리합니다.
@@ -203,6 +210,56 @@ async def on_transcript(call, role, text):
 | `call_start` | `(call)` | 통화 시작 |
 | `call_end` | `(call)` | 통화 종료 |
 | `transcript` | `(call, role, text)` | 음성 텍스트 생성 |
+
+## 발신 (Outbound Call)
+
+`agent.call(to)`로 아웃바운드 전화를 걸 수 있습니다.
+
+```python
+async def main():
+    agent = ClawOpsAgent(
+        from_="07012345678",
+        system_prompt="당신은 예약 확인 도우미입니다.",
+        voice="marin",
+    )
+
+    @agent.on("call_start")
+    async def on_start(call):
+        print(f"통화 시작: {call.call_id} ({call.direction})")
+
+    @agent.on("call_failed")
+    async def on_failed(call, reason):
+        print(f"발신 실패: {reason}")
+
+    # 발신만 하는 경우 — start() 없이 가능
+    call = await agent.call("01012345678", timeout=30)
+    print(call.call_id)    # 즉시 사용 가능
+    print(call.status)     # "queued"
+    print(call.direction)  # "outbound"
+
+    # 수신도 같이 하는 경우
+    await agent.start()  # 수신 대기 시작
+    call = await agent.call("01012345678")
+
+asyncio.run(main())
+```
+
+### `call()` 파라미터
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|----------|------|--------|------|
+| `to` | `str` | 필수 | 수신 전화번호 |
+| `timeout` | `int` | `60` | 상대방 무응답 시 대기 시간 (초) |
+
+### CallSession 필드
+
+| 필드 | 설명 |
+|------|------|
+| `call_id` | 통화 ID |
+| `direction` | `"inbound"` 또는 `"outbound"` |
+| `status` | 현재 상태 (`queued`, `ringing`, `in-progress`, `completed`, `failed`, `no-answer`, `busy`) |
+| `from_number` | 발신 번호 |
+| `to_number` | 수신 번호 |
 
 ## 통화 녹음
 
@@ -420,7 +477,13 @@ agent = ClawOpsAgent(
     ),
 )
 
-agent.listen()
+async def main():
+    await agent.start()
+    # 수신 대기 중... (Ctrl+C로 종료)
+    await asyncio.Event().wait()
+
+import asyncio
+asyncio.run(main())
 ```
 
 ### Span 계층 구조
@@ -506,14 +569,21 @@ async def on_start(call):
 ```python
 from clawops._exceptions import AgentError, AgentConnectionError
 
-try:
-    agent.listen()
-except AgentConnectionError as e:
-    print(f"서버 연결 실패: {e}")
-except AgentError as e:
-    print(f"에이전트 에러: {e}")
-except KeyboardInterrupt:
-    print("에이전트 종료")
+async def main():
+    try:
+        await agent.start()
+        await asyncio.Event().wait()
+    except AgentConnectionError as e:
+        print(f"서버 연결 실패: {e}")
+    except AgentError as e:
+        print(f"에이전트 에러: {e}")
+    except KeyboardInterrupt:
+        print("에이전트 종료")
+    finally:
+        await agent.stop()
+
+import asyncio
+asyncio.run(main())
 ```
 
 | 에러 | 설명 |
