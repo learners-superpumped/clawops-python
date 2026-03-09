@@ -104,18 +104,6 @@ class ClawOpsAgent:
             return fn
         return decorator
 
-    def listen(self) -> None:
-        log.info(f"ClawOpsAgent listening on {self._from_number}")
-        try:
-            asyncio.run(self._run())
-        except KeyboardInterrupt:
-            log.info("Agent stopped by user")
-
-    async def _run(self) -> None:
-        await self._ensure_control_ws()
-        if self._control_ws_task:
-            await self._control_ws_task
-
     async def start(self) -> None:
         """비블로킹 — Control WS 연결 + 수신 대기 시작."""
         if self._control_ws is not None:
