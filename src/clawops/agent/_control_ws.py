@@ -35,11 +35,17 @@ class ControlWebSocket:
         number: str,
         on_call_incoming: Callable[[dict[str, Any]], Awaitable[None]],
         on_call_ended: Callable[[dict[str, Any]], Awaitable[None]],
+        on_call_outbound_ready: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_call_ringing: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_call_failed: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         self._url = build_control_ws_url(base_url=base_url, account_id=account_id, number=number)
         self._api_key = api_key
         self._on_call_incoming = on_call_incoming
         self._on_call_ended = on_call_ended
+        self._on_call_outbound_ready = on_call_outbound_ready
+        self._on_call_ringing = on_call_ringing
+        self._on_call_failed = on_call_failed
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
         self._running = False
@@ -67,6 +73,12 @@ class ControlWebSocket:
                             await self._on_call_incoming(data)
                         elif event == "call.ended":
                             await self._on_call_ended(data)
+                        elif event == "call.outbound_ready" and self._on_call_outbound_ready:
+                            await self._on_call_outbound_ready(data)
+                        elif event == "call.ringing" and self._on_call_ringing:
+                            await self._on_call_ringing(data)
+                        elif event == "call.failed" and self._on_call_failed:
+                            await self._on_call_failed(data)
                     elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                         break
 
