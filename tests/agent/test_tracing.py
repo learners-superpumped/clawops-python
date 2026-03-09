@@ -114,7 +114,8 @@ class TestSpansWithMockTracer:
         from clawops.agent.tracing._spans import call_span
 
         tracer, mock_span = self._make_mock_tracer()
-        with patch("clawops.agent.tracing._spans._tracer", tracer):
+        with patch("clawops.agent.tracing._spans._tracer", tracer), \
+             patch("clawops.agent.tracing._spans._enabled", True):
             with call_span("call-123", from_number="+8210") as span:
                 assert span is mock_span
 
@@ -128,7 +129,8 @@ class TestSpansWithMockTracer:
         from clawops.agent.tracing._spans import tool_call_span
 
         tracer, mock_span = self._make_mock_tracer()
-        with patch("clawops.agent.tracing._spans._tracer", tracer):
+        with patch("clawops.agent.tracing._spans._tracer", tracer), \
+             patch("clawops.agent.tracing._spans._enabled", True):
             with tool_call_span("get_weather", "mcp") as span:
                 assert span is mock_span
 
@@ -141,7 +143,8 @@ class TestSpansWithMockTracer:
         from clawops.agent.tracing._spans import mcp_connect_span
 
         tracer, mock_span = self._make_mock_tracer()
-        with patch("clawops.agent.tracing._spans._tracer", tracer):
+        with patch("clawops.agent.tracing._spans._tracer", tracer), \
+             patch("clawops.agent.tracing._spans._enabled", True):
             with mcp_connect_span("stdio", command="npx") as span:
                 assert span is mock_span
 
@@ -154,7 +157,8 @@ class TestSpansWithMockTracer:
         from clawops.agent.tracing._spans import mcp_call_tool_span
 
         tracer, mock_span = self._make_mock_tracer()
-        with patch("clawops.agent.tracing._spans._tracer", tracer):
+        with patch("clawops.agent.tracing._spans._tracer", tracer), \
+             patch("clawops.agent.tracing._spans._enabled", True):
             with mcp_call_tool_span("search") as span:
                 assert span is mock_span
 
@@ -166,7 +170,8 @@ class TestSpansWithMockTracer:
         from clawops.agent.tracing._spans import llm_session_span
 
         tracer, mock_span = self._make_mock_tracer()
-        with patch("clawops.agent.tracing._spans._tracer", tracer):
+        with patch("clawops.agent.tracing._spans._tracer", tracer), \
+             patch("clawops.agent.tracing._spans._enabled", True):
             with llm_session_span("gpt-realtime-mini", voice="marin") as span:
                 assert span is mock_span
 
@@ -260,8 +265,8 @@ class TestCallSpanInstrumentation:
             )
 
     @pytest.mark.asyncio
-    async def test_start_call_session_no_span_without_tracing(self):
-        """tracing 비활성화 시 call_span을 호출하지 않는지 확인."""
+    async def test_start_call_session_always_calls_call_span(self):
+        """tracing 미설정 시에도 call_span은 항상 호출되지만 no-op으로 동작."""
         from clawops.agent._agent import ClawOpsAgent
 
         agent = ClawOpsAgent(
@@ -282,6 +287,8 @@ class TestCallSpanInstrumentation:
         with patch("clawops.agent._agent.call_span") as mock_span, \
              patch("clawops.agent._agent.MediaWebSocket") as mock_mws, \
              patch("clawops.agent._agent.RealtimeSession") as mock_rt:
+            mock_span.return_value.__enter__ = MagicMock(return_value=None)
+            mock_span.return_value.__exit__ = MagicMock(return_value=False)
             mock_mws.return_value.connect = AsyncMock()
             mock_mws.return_value.send_audio = AsyncMock()
             mock_mws.return_value.send_clear = AsyncMock()
@@ -291,7 +298,7 @@ class TestCallSpanInstrumentation:
 
             await agent._start_call_session(mock_call, "wss://media")
 
-            mock_span.assert_not_called()
+            mock_span.assert_called_once()
 
 
 class TestMCPConnectSpanInstrumentation:
@@ -455,3 +462,172 @@ class TestLLMSessionSpanInstrumentation:
 
             # cleanup
             await session.stop()
+
+
+class TestSetupTracing:
+    """setup_tracing이 _enabled / _tracer를 올바르게 설정하는지 확인."""
+
+    def test_tracing_disabled_by_default(self):
+        """TracingConfig 없이 Agent 생성 시 _enabled=False."""
+        import clawops.agent.tracing._spans as spans_mod
+        # Reset state
+        spans_mod._enabled = False
+        spans_mod._tracer = None
+
+        assert spans_mod._enabled is False
+
+        # Span helpers yield None when disabled
+        with spans_mod.call_span("x") as s:
+            assert s is None
+
+    def test_setup_tracing_enables(self):
+        """setup_tracing(TracingConfig(enabled=True))이 _enabled=True로 설정."""
+        import clawops.agent.tracing._spans as spans_mod
+        from clawops.agent.tracing._config import TracingConfig
+
+        # Ensure clean state
+        spans_mod._enabled = False
+        spans_mod._tracer = None
+
+        config = TracingConfig(enabled=True)
+        with patch.object(spans_mod, "_has_otel", True), \
+             patch.object(spans_mod, "_otel_trace") as mock_otel:
+            mock_tracer = MagicMock()
+            mock_otel.get_tracer.return_value = mock_tracer
+            spans_mod.setup_tracing(config)
+
+            assert spans_mod._enabled is True
+            assert spans_mod._tracer is mock_tracer
+            mock_otel.get_tracer.assert_called_once_with("clawops.agent")
+
+        # Cleanup
+        spans_mod._enabled = False
+        spans_mod._tracer = None
+
+    def test_setup_tracing_disabled_config(self):
+        """TracingConfig(enabled=False)이면 _enabled=False."""
+        import clawops.agent.tracing._spans as spans_mod
+        from clawops.agent.tracing._config import TracingConfig
+
+        spans_mod._enabled = True
+        spans_mod._tracer = MagicMock()
+
+        config = TracingConfig(enabled=False)
+        spans_mod.setup_tracing(config)
+
+        assert spans_mod._enabled is False
+        assert spans_mod._tracer is None
+
+    def test_setup_tracing_with_custom_tracer_provider(self):
+        """tracer_provider가 지정되면 해당 provider에서 tracer를 가져온다."""
+        import clawops.agent.tracing._spans as spans_mod
+        from clawops.agent.tracing._config import TracingConfig
+
+        spans_mod._enabled = False
+        spans_mod._tracer = None
+
+        mock_provider = MagicMock()
+        mock_tracer = MagicMock()
+        mock_provider.get_tracer.return_value = mock_tracer
+
+        config = TracingConfig(enabled=True, tracer_provider=mock_provider)
+        with patch.object(spans_mod, "_has_otel", True):
+            spans_mod.setup_tracing(config)
+
+        assert spans_mod._enabled is True
+        assert spans_mod._tracer is mock_tracer
+        mock_provider.get_tracer.assert_called_once_with("clawops.agent")
+
+        # Cleanup
+        spans_mod._enabled = False
+        spans_mod._tracer = None
+
+    def test_setup_tracing_no_otel_installed(self):
+        """opentelemetry 미설치 시 enabled=True여도 _enabled=False."""
+        import clawops.agent.tracing._spans as spans_mod
+        from clawops.agent.tracing._config import TracingConfig
+
+        spans_mod._enabled = False
+        spans_mod._tracer = None
+
+        config = TracingConfig(enabled=True)
+        with patch.object(spans_mod, "_has_otel", False):
+            spans_mod.setup_tracing(config)
+
+        assert spans_mod._enabled is False
+        assert spans_mod._tracer is None
+
+    def test_span_noop_when_enabled_false(self):
+        """_enabled=False일 때 tracer가 있어도 span은 no-op."""
+        import clawops.agent.tracing._spans as spans_mod
+
+        spans_mod._enabled = False
+        spans_mod._tracer = MagicMock()
+
+        with spans_mod.call_span("x") as s:
+            assert s is None
+
+        # tracer.start_as_current_span should NOT have been called
+        spans_mod._tracer.start_as_current_span.assert_not_called()
+
+        # Cleanup
+        spans_mod._tracer = None
+
+
+class TestAgentCallsSetupTracing:
+    def test_agent_init_calls_setup_tracing(self):
+        """Agent에 TracingConfig을 전달하면 setup_tracing이 호출된다."""
+        from clawops.agent._agent import ClawOpsAgent
+        from clawops.agent.tracing import TracingConfig
+
+        config = TracingConfig(enabled=True)
+        with patch("clawops.agent._agent.setup_tracing") as mock_setup:
+            ClawOpsAgent(
+                api_key="test",
+                account_id="acc",
+                from_="+821000000000",
+                tracing=config,
+            )
+            mock_setup.assert_called_once_with(config)
+
+    def test_agent_init_no_setup_tracing_without_config(self):
+        """TracingConfig 미전달 시 setup_tracing이 호출되지 않는다."""
+        with patch("clawops.agent._agent.setup_tracing") as mock_setup:
+            from clawops.agent._agent import ClawOpsAgent
+            ClawOpsAgent(
+                api_key="test",
+                account_id="acc",
+                from_="+821000000000",
+            )
+            mock_setup.assert_not_called()
+
+
+class TestLLMSpanExceptionPropagation:
+    @pytest.mark.asyncio
+    async def test_cleanup_passes_exception_info_to_span_exit(self):
+        """_cleanup이 활성 예외 정보를 span __exit__에 전달하는지 확인."""
+        from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
+        from clawops.agent._tool import ToolRegistry
+
+        config = RealtimeConfig(system_prompt="test", openai_api_key="sk-test")
+        registry = ToolRegistry()
+        session = RealtimeSession(config, registry)
+
+        mock_span_ctx = MagicMock()
+        mock_span_ctx.__exit__ = MagicMock(return_value=False)
+        session._llm_span_ctx = mock_span_ctx
+        session._llm_span = MagicMock()
+
+        # Simulate calling _cleanup during exception handling
+        exc = RuntimeError("test error")
+        try:
+            raise exc
+        except RuntimeError:
+            await session._cleanup()
+
+        # Verify __exit__ was called with exception info, not (None, None, None)
+        mock_span_ctx.__exit__.assert_called_once()
+        call_args = mock_span_ctx.__exit__.call_args[0]
+        assert call_args[0] is RuntimeError
+        assert call_args[1] is exc
+        assert call_args[2] is not None  # traceback

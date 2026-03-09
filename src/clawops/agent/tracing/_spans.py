@@ -6,17 +6,39 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any, Generator, TYPE_CHECKING
 
 from . import _attributes as attr
 
+if TYPE_CHECKING:
+    from ._config import TracingConfig
+
 log = logging.getLogger("clawops.agent")
 
+_enabled: bool = False
+_tracer: Any | None = None
+
 try:
-    from opentelemetry import trace
-    _tracer = trace.get_tracer("clawops.agent")
+    from opentelemetry import trace as _otel_trace
+    _has_otel = True
 except ImportError:
-    _tracer = None
+    _has_otel = False
+
+
+def setup_tracing(config: TracingConfig) -> None:
+    """TracingConfig를 기반으로 모듈 수준 tracing 상태를 설정한다."""
+    global _enabled, _tracer
+
+    if not config.enabled or not _has_otel:
+        _enabled = False
+        _tracer = None
+        return
+
+    _enabled = True
+    if config.tracer_provider is not None:
+        _tracer = config.tracer_provider.get_tracer("clawops.agent")
+    else:
+        _tracer = _otel_trace.get_tracer("clawops.agent")
 
 
 @contextmanager
@@ -26,7 +48,7 @@ def call_span(
     from_number: str = "",
     to_number: str = "",
 ) -> Generator[Any, None, None]:
-    if _tracer is None:
+    if not _enabled or _tracer is None:
         yield None
         return
     with _tracer.start_as_current_span(
@@ -47,7 +69,7 @@ def mcp_connect_span(
     command: str = "",
     url: str = "",
 ) -> Generator[Any, None, None]:
-    if _tracer is None:
+    if not _enabled or _tracer is None:
         yield None
         return
     attributes: dict[str, Any] = {attr.MCP_SERVER_TYPE: server_type}
@@ -65,7 +87,7 @@ def llm_session_span(
     *,
     voice: str = "",
 ) -> Generator[Any, None, None]:
-    if _tracer is None:
+    if not _enabled or _tracer is None:
         yield None
         return
     attributes: dict[str, Any] = {
@@ -80,7 +102,7 @@ def llm_session_span(
 
 @contextmanager
 def llm_generation_span() -> Generator[Any, None, None]:
-    if _tracer is None:
+    if not _enabled or _tracer is None:
         yield None
         return
     with _tracer.start_as_current_span("llm.generation") as span:
@@ -92,7 +114,7 @@ def tool_call_span(
     name: str,
     source: str,
 ) -> Generator[Any, None, None]:
-    if _tracer is None:
+    if not _enabled or _tracer is None:
         yield None
         return
     with _tracer.start_as_current_span(
@@ -109,7 +131,7 @@ def tool_call_span(
 def mcp_call_tool_span(
     tool_name: str,
 ) -> Generator[Any, None, None]:
-    if _tracer is None:
+    if not _enabled or _tracer is None:
         yield None
         return
     with _tracer.start_as_current_span(

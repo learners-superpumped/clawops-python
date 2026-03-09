@@ -263,8 +263,10 @@ class RealtimeSession:
         if self._http:
             await self._http.close()
         self._http = None
-        # Close LLM session span
+        # Close LLM session span, propagating any active exception info
         if self._llm_span_ctx:
-            self._llm_span_ctx.__exit__(None, None, None)
+            import sys
+            exc_info = sys.exc_info()
+            self._llm_span_ctx.__exit__(*exc_info)
             self._llm_span_ctx = None
             self._llm_span = None

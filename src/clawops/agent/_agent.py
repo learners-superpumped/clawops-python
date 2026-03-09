@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from contextlib import nullcontext
 from typing import Any, Callable, Awaitable
 
 from .._exceptions import AgentError
@@ -20,7 +19,7 @@ from ._tool import ToolRegistry
 from .pipeline._base import STT, LLM, TTS
 from .pipeline._realtime_session import RealtimeConfig, RealtimeSession
 from .tracing import TracingConfig
-from .tracing._spans import call_span, mcp_connect_span
+from .tracing._spans import call_span, mcp_connect_span, setup_tracing
 
 log = logging.getLogger("clawops.agent")
 
@@ -87,6 +86,9 @@ class ClawOpsAgent:
         self._recording_path = recording_path
         self._tracing = tracing
 
+        if self._tracing is not None:
+            setup_tracing(self._tracing)
+
         self._tool_registry = ToolRegistry()
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
         self._active_sessions: dict[str, CallSession] = {}
@@ -145,12 +147,11 @@ class ClawOpsAgent:
         asyncio.create_task(self._start_call_session(call, media_url))
 
     async def _start_call_session(self, call: CallSession, media_url: str) -> None:
-        ctx = call_span(
+        with call_span(
             call.call_id,
             from_number=call.from_number,
             to_number=call.to_number,
-        ) if self._tracing else nullcontext()
-        with ctx:
+        ):
             recorder: AudioRecorder | None = None
             if self._recording:
                 recorder = AudioRecorder(self._recording_path, call.call_id)
@@ -160,14 +161,11 @@ class ClawOpsAgent:
             if self._mcp_servers:
                 log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
                 for server_config in self._mcp_servers:
-                    if self._tracing:
-                        from .mcp._stdio import MCPServerStdio as _Stdio
-                        if isinstance(server_config, _Stdio):
-                            span_ctx = mcp_connect_span("stdio", command=server_config.command)
-                        else:
-                            span_ctx = mcp_connect_span("http", url=server_config.url)
+                    from .mcp._stdio import MCPServerStdio as _Stdio
+                    if isinstance(server_config, _Stdio):
+                        span_ctx = mcp_connect_span("stdio", command=server_config.command)
                     else:
-                        span_ctx = nullcontext()
+                        span_ctx = mcp_connect_span("http", url=server_config.url)
                     with span_ctx:
                         client = MCPClient(server_config)
                         await client.connect()
