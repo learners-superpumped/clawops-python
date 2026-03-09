@@ -292,3 +292,54 @@ class TestCallSpanInstrumentation:
             await agent._start_call_session(mock_call, "wss://media")
 
             mock_span.assert_not_called()
+
+
+class TestMCPConnectSpanInstrumentation:
+    @pytest.mark.asyncio
+    async def test_mcp_connect_uses_span(self):
+        """MCP 서버 연결 시 mcp_connect_span이 호출되는지 확인."""
+        from clawops.agent._agent import ClawOpsAgent
+        from clawops.agent.tracing import TracingConfig
+        from clawops.agent.mcp import MCPServerStdio
+
+        agent = ClawOpsAgent(
+            api_key="test",
+            account_id="acc",
+            from_="+821000000000",
+            tracing=TracingConfig(),
+            mcp_servers=[MCPServerStdio("npx", args=["@mcp/test"])],
+        )
+
+        mock_call = MagicMock()
+        mock_call.call_id = "call-002"
+        mock_call.from_number = "+82"
+        mock_call.to_number = "+82"
+        mock_call._emit = AsyncMock()
+        mock_call._send_audio_fn = None
+        mock_call._send_clear_fn = None
+        mock_call._hangup_fn = None
+
+        with patch("clawops.agent._agent.call_span") as mock_cs, \
+             patch("clawops.agent._agent.mcp_connect_span") as mock_mcs, \
+             patch("clawops.agent._agent.MCPClient") as mock_mcp, \
+             patch("clawops.agent._agent.MediaWebSocket") as mock_mws, \
+             patch("clawops.agent._agent.RealtimeSession") as mock_rt:
+            mock_cs.return_value.__enter__ = MagicMock(return_value=MagicMock())
+            mock_cs.return_value.__exit__ = MagicMock(return_value=False)
+            mock_mcs.return_value.__enter__ = MagicMock(return_value=MagicMock())
+            mock_mcs.return_value.__exit__ = MagicMock(return_value=False)
+            mock_mcp_instance = AsyncMock()
+            mock_mcp_instance.connect = AsyncMock()
+            mock_mcp_instance.close = AsyncMock()
+            mock_mcp_instance.tools = []
+            mock_mcp.return_value = mock_mcp_instance
+            mock_mws.return_value.connect = AsyncMock()
+            mock_mws.return_value.send_audio = AsyncMock()
+            mock_mws.return_value.send_clear = AsyncMock()
+            mock_mws.return_value.close = AsyncMock()
+            mock_rt.return_value.start = AsyncMock()
+            mock_rt.return_value.stop = AsyncMock()
+
+            await agent._start_call_session(mock_call, "wss://media")
+
+            mock_mcs.assert_called_once_with("stdio", command="npx")

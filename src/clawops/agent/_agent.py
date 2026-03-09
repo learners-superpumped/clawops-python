@@ -20,7 +20,7 @@ from ._tool import ToolRegistry
 from .pipeline._base import STT, LLM, TTS
 from .pipeline._realtime_session import RealtimeConfig, RealtimeSession
 from .tracing import TracingConfig
-from .tracing._spans import call_span
+from .tracing._spans import call_span, mcp_connect_span
 
 log = logging.getLogger("clawops.agent")
 
@@ -160,9 +160,18 @@ class ClawOpsAgent:
             if self._mcp_servers:
                 log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
                 for server_config in self._mcp_servers:
-                    client = MCPClient(server_config)
-                    await client.connect()
-                    mcp_clients.append(client)
+                    if self._tracing:
+                        from .mcp._stdio import MCPServerStdio as _Stdio
+                        if isinstance(server_config, _Stdio):
+                            span_ctx = mcp_connect_span("stdio", command=server_config.command)
+                        else:
+                            span_ctx = mcp_connect_span("http", url=server_config.url)
+                    else:
+                        span_ctx = nullcontext()
+                    with span_ctx:
+                        client = MCPClient(server_config)
+                        await client.connect()
+                        mcp_clients.append(client)
                 self._tool_registry.register_mcp_tools(mcp_clients)
 
             realtime = RealtimeSession(self._config, self._tool_registry, recorder=recorder)
