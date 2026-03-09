@@ -14,11 +14,14 @@ class CallSession:
         from_number: str,
         to_number: str,
         account_id: str,
+        direction: str = "inbound",
     ) -> None:
         self.call_id = call_id
         self.from_number = from_number
         self.to_number = to_number
         self.account_id = account_id
+        self.direction = direction
+        self.status: str = "queued" if direction == "outbound" else "ringing"
         self.start_time = datetime.now()
         self.metadata: dict[str, Any] = {}
 
