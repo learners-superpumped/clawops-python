@@ -231,10 +231,10 @@ class ClawOpsAgent:
             realtime = RealtimeSession(self._config, call_tools, recorder=recorder)
 
             async def on_audio(ulaw: bytes, ts: int) -> None:
+                await realtime.feed_audio(ulaw, ts)
                 if recorder:
                     from ._audio import ulaw_to_pcm16
                     recorder.write_inbound(ulaw_to_pcm16(ulaw))
-                await realtime.feed_audio(ulaw, ts)
 
             media_ws = MediaWebSocket(
                 url=media_url,
