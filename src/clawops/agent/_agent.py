@@ -229,10 +229,23 @@ class ClawOpsAgent:
                         mcp_clients.append(client)
                 call_tools.register_mcp_tools(mcp_clients)
 
-            realtime = RealtimeSession(self._config, call_tools, recorder=recorder)
+            if self._stt and self._llm and self._tts:
+                from .pipeline._pipeline_session import PipelineSession
+                session = PipelineSession(
+                    stt=self._stt,
+                    llm=self._llm,
+                    tts=self._tts,
+                    system_prompt=self._config.system_prompt,
+                    tool_registry=call_tools,
+                    greeting=self._config.greeting,
+                    language=self._config.language,
+                    recorder=recorder,
+                )
+            else:
+                session = RealtimeSession(self._config, call_tools, recorder=recorder)
 
             async def on_audio(ulaw: bytes, ts: int) -> None:
-                await realtime.feed_audio(ulaw, ts)
+                await session.feed_audio(ulaw, ts)
                 if recorder:
                     from ._audio import ulaw_to_pcm16
                     recorder.write_inbound(ulaw_to_pcm16(ulaw))
@@ -242,7 +255,7 @@ class ClawOpsAgent:
                 api_key=self._api_key,
                 on_audio=on_audio,
                 on_start=lambda info: self._on_media_start(call, info),
-                on_stop=lambda: self._on_media_stop(call, realtime),
+                on_stop=lambda: self._on_media_stop(call, session),
             )
 
             call._send_audio_fn = media_ws.send_audio
@@ -250,12 +263,12 @@ class ClawOpsAgent:
             call._hangup_fn = lambda: media_ws.close()
 
             await call._emit("call_start")
-            await realtime.start(call)
+            await session.start(call)
 
             try:
                 await media_ws.connect()
             finally:
-                await realtime.stop()
+                await session.stop()
                 if mcp_clients:
                     call_tools.clear_mcp_tools()
                     for c in mcp_clients:
@@ -268,9 +281,9 @@ class ClawOpsAgent:
     async def _on_media_start(self, call: CallSession, info: dict[str, Any]) -> None:
         log.info(f"Media stream started: {call.call_id}")
 
-    async def _on_media_stop(self, call: CallSession, realtime: RealtimeSession) -> None:
+    async def _on_media_stop(self, call: CallSession, session: RealtimeSession) -> None:
         log.info(f"Media stream stopped: {call.call_id}")
-        await realtime.stop()
+        await session.stop()
 
     async def _handle_outbound_ready(self, data: dict[str, Any]) -> None:
         call_id = data["callId"]
