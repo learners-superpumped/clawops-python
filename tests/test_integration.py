@@ -43,51 +43,23 @@ class TestSyncIntegration:
     @respx.mock
     def test_full_number_lifecycle(self):
         respx.post(f"{BASE}/v1/accounts/{ACCOUNT}/numbers").mock(
-            return_value=httpx.Response(201, json={"number": "1001", "source": "sip", "webhookUrl": None, "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}))
+            return_value=httpx.Response(201, json={"number": "07012340001", "webhookUrl": None, "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}))
         respx.get(f"{BASE}/v1/accounts/{ACCOUNT}/numbers").mock(
             return_value=httpx.Response(200, json={"data": [
-                {"number": "1001", "source": "sip", "webhookUrl": None, "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}]}))
-        respx.put(f"{BASE}/v1/accounts/{ACCOUNT}/numbers/1001").mock(
-            return_value=httpx.Response(200, json={"number": "1001", "source": "sip",
+                {"number": "07012340001", "webhookUrl": None, "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}]}))
+        respx.put(f"{BASE}/v1/accounts/{ACCOUNT}/numbers/07012340001").mock(
+            return_value=httpx.Response(200, json={"number": "07012340001",
                                                     "webhookUrl": "https://new.com", "webhookMethod": "POST", "createdAt": "2025-06-01T12:00:00Z"}))
-        respx.delete(f"{BASE}/v1/accounts/{ACCOUNT}/numbers/1001").mock(return_value=httpx.Response(204))
+        respx.delete(f"{BASE}/v1/accounts/{ACCOUNT}/numbers/07012340001").mock(return_value=httpx.Response(204))
 
         with ClawOps(api_key="sk_test", account_id=ACCOUNT, max_retries=0) as client:
-            num = client.numbers.create(source="sip", number="1001")
-            assert num.number == "1001"
+            num = client.numbers.create()
+            assert num.number == "07012340001"
             nums = client.numbers.list()
             assert len(nums) == 1
-            updated = client.numbers.update("1001", webhook_url="https://new.com")
+            updated = client.numbers.update("07012340001", webhook_url="https://new.com")
             assert updated.webhook_url == "https://new.com"
-            client.numbers.delete("1001")
-
-    @respx.mock
-    def test_full_sip_credential_lifecycle(self):
-        cred_id = "clu1abc2def3ghi"
-        cred_json = {
-            "id": cred_id, "username": "usr_aBcDeFgHiJkL", "password": "secret123",
-            "displayName": "Office", "sipServer": "sip.claw-ops.com",
-            "sipPort": 5060, "transport": "UDP", "createdAt": "2025-06-01T12:00:00Z",
-        }
-        respx.post(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials").mock(return_value=httpx.Response(201, json=cred_json))
-        respx.get(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials").mock(
-            return_value=httpx.Response(200, json={"data": [
-                {"id": cred_id, "username": "usr_aBcDeFgHiJkL", "displayName": "Office",
-                 "sipServer": "sip.claw-ops.com", "sipPort": 5060, "transport": "UDP", "createdAt": "2025-06-01T12:00:00Z"}]}))
-        respx.get(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials/{cred_id}").mock(
-            return_value=httpx.Response(200, json={
-                "id": cred_id, "username": "usr_aBcDeFgHiJkL", "displayName": "Office",
-                 "sipServer": "sip.claw-ops.com", "sipPort": 5060, "transport": "UDP", "createdAt": "2025-06-01T12:00:00Z"}))
-        respx.delete(f"{BASE}/v1/accounts/{ACCOUNT}/sip/credentials/{cred_id}").mock(return_value=httpx.Response(204))
-
-        with ClawOps(api_key="sk_test", account_id=ACCOUNT, max_retries=0) as client:
-            cred = client.sip.credentials.create(display_name="Office")
-            assert cred.password == "secret123"
-            creds = client.sip.credentials.list()
-            assert len(creds) == 1
-            fetched = client.sip.credentials.get(cred_id)
-            assert fetched.username == "usr_aBcDeFgHiJkL"
-            client.sip.credentials.delete(cred_id)
+            client.numbers.delete("07012340001")
 
     @respx.mock
     def test_multi_account(self):

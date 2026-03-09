@@ -8,13 +8,7 @@ from .._utils import PropertyInfo
 
 
 class NumberCreateParams(TypedDict, total=False):
-    """번호 등록 요청 파라미터."""
-
-    source: Literal["pool", "sip"]
-    """번호 유형. 'pool'=PSTN 풀, 'sip'=SIP 내선번호."""
-
-    number: Optional[str]
-    """SIP 내선번호 (source='sip'일 때 필수, 3~20자리)."""
+    """번호 발급 요청 파라미터."""
 
     webhook_url: Annotated[Optional[str], PropertyInfo(alias="webhookUrl")]
     """수신 전화 처리용 Webhook URL."""

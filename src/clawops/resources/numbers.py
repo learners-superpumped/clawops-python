@@ -10,19 +10,13 @@ from ..types.number import NumberListItem, NumberUpdateResponse, PhoneNumber
 class Numbers(SyncAPIResource):
     """전화번호(Numbers) 리소스."""
 
-    def create(self, *, source: Literal["pool", "sip"] | None = None, number: str | None = None,
-               webhook_url: str | None = None, extra_headers: dict[str, str] | None = None,
+    def create(self, *, webhook_url: str | None = None, extra_headers: dict[str, str] | None = None,
                extra_query: dict[str, object] | None = None, timeout: float | None = None) -> PhoneNumber:
-        """번호를 등록합니다.
+        """PSTN 번호를 발급합니다.
 
-        PSTN 번호 풀에서 자동 발급하거나, SIP 내선번호를 직접 등록합니다.
-        source를 생략하거나 'pool'로 지정하면 번호 풀에서 자동 발급됩니다.
-        'sip'으로 지정하면 number 파라미터에 원하는 번호를 직접 지정합니다.
-        SIP 번호는 통신사 번호 형식(010, 070, 02 등)을 사용할 수 없습니다.
+        번호 풀에서 자동으로 번호를 발급합니다.
 
         Args:
-            source: 'pool'=PSTN 풀 발급 (기본값), 'sip'=SIP 내선번호.
-            number: SIP 내선번호 (source='sip'일 때 필수, 3~20자리).
             webhook_url: 수신 전화 처리용 Webhook URL.
             extra_headers: 추가 HTTP 헤더.
             extra_query: 추가 쿼리 파라미터.
@@ -32,12 +26,10 @@ class Numbers(SyncAPIResource):
             등록된 PhoneNumber 객체.
 
         Raises:
-            BadRequestError: 번호 형식 오류, 통신사 번호 형식 사용 등.
-            ConflictError: 번호 중복.
             UnprocessableEntityError: 번호 할당량 초과.
             ServiceUnavailableError: 발급 가능한 번호 없음.
         """
-        body = strip_not_given({"source": source, "number": number, "webhookUrl": webhook_url})
+        body = strip_not_given({"webhookUrl": webhook_url})
         return self._client._post(
             f"{self._base_path}/numbers", body=body if body else None, cast_to=PhoneNumber,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
@@ -96,9 +88,7 @@ class Numbers(SyncAPIResource):
 
     def delete(self, number: str, *, extra_headers: dict[str, str] | None = None,
                timeout: float | None = None) -> None:
-        """등록된 번호를 삭제합니다.
-
-        PSTN 번호는 풀로 복귀, SIP 번호는 단순 삭제됩니다.
+        """등록된 번호를 삭제합니다. 번호는 풀로 복귀됩니다.
 
         Args:
             number: 삭제할 전화번호.
@@ -116,11 +106,10 @@ class Numbers(SyncAPIResource):
 class AsyncNumbers(AsyncAPIResource):
     """전화번호(Numbers) 비동기 리소스."""
 
-    async def create(self, *, source: Literal["pool", "sip"] | None = None, number: str | None = None,
-                     webhook_url: str | None = None, extra_headers: dict[str, str] | None = None,
+    async def create(self, *, webhook_url: str | None = None, extra_headers: dict[str, str] | None = None,
                      extra_query: dict[str, object] | None = None, timeout: float | None = None) -> PhoneNumber:
-        """번호를 비동기로 등록합니다."""
-        body = strip_not_given({"source": source, "number": number, "webhookUrl": webhook_url})
+        """번호를 비동기로 발급합니다."""
+        body = strip_not_given({"webhookUrl": webhook_url})
         return await self._client._post(
             f"{self._base_path}/numbers", body=body if body else None, cast_to=PhoneNumber,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,

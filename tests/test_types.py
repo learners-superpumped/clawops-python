@@ -2,7 +2,6 @@ from datetime import datetime
 
 from clawops.types.call import Call, CallControlResponse
 from clawops.types.number import PhoneNumber, NumberListItem
-from clawops.types.sip.credential import SipCredential, SipCredentialListItem
 from clawops.types.shared import PaginationMeta
 
 
@@ -38,55 +37,20 @@ def test_call_control_response():
 
 
 def test_phone_number_from_api():
-    data = {"number": "07012340001", "source": "pool"}
+    data = {"number": "07012340001"}
     num = PhoneNumber.model_validate(data)
     assert num.number == "07012340001"
-    assert num.source == "pool"
 
 
 def test_number_list_item():
     data = {
         "number": "07012340001",
-        "source": "pool",
         "webhookUrl": "https://my-app.com/voice",
         "createdAt": "2025-06-01T12:00:00Z",
     }
     item = NumberListItem.model_validate(data)
     assert item.number == "07012340001"
     assert item.webhook_url == "https://my-app.com/voice"
-
-
-def test_sip_credential_with_password():
-    data = {
-        "id": "clu1abc2def3ghi",
-        "username": "usr_aBcDeFgHiJkL",
-        "password": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
-        "displayName": "Office Phone",
-        "sipServer": "sip.claw-ops.com",
-        "sipPort": 5060,
-        "transport": "UDP",
-        "createdAt": "2025-06-01T12:00:00Z",
-    }
-    cred = SipCredential.model_validate(data)
-    assert cred.id == "clu1abc2def3ghi"
-    assert cred.username == "usr_aBcDeFgHiJkL"
-    assert cred.password == "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
-    assert cred.display_name == "Office Phone"
-    assert cred.sip_server == "sip.claw-ops.com"
-    assert cred.sip_port == 5060
-    assert cred.transport == "UDP"
-
-
-def test_sip_credential_list_item_no_password():
-    data = {
-        "id": "clu1abc2def3ghi",
-        "username": "usr_aBcDeFgHiJkL",
-        "displayName": None,
-        "createdAt": "2025-06-01T12:00:00Z",
-    }
-    item = SipCredentialListItem.model_validate(data)
-    assert item.id == "clu1abc2def3ghi"
-    assert item.display_name is None
 
 
 def test_pagination_meta():

@@ -25,18 +25,13 @@ class Calls(SyncAPIResource):
     ) -> Call:
         """발신 전화를 생성합니다.
 
-        PSTN 번호 또는 SIP URI로 아웃바운드 전화를 발신합니다.
+        PSTN 번호로 아웃바운드 전화를 발신합니다.
         From 번호는 계정에 등록된 번호여야 합니다.
 
-        **PSTN 발신**: to에 전화번호를 입력하면 통신사 트렁크를 통해 일반 전화로 발신됩니다.
         - 예: ``to="01012345678"``
 
-        **SIP 내선 발신**: to에 ``sip:`` URI를 입력하면 등록된 SIP 클라이언트로 직접 발신됩니다.
-        - 예: ``to="sip:usr_aBcDeFgHiJkL@sip.claw-ops.com"``
-        - SIP username은 SIP Credential 생성 시 발급된 username을 사용합니다.
-
         Args:
-            to: 수신 대상. 전화번호(PSTN 발신) 또는 sip: URI(내선 발신).
+            to: 수신 전화번호.
             from_: 발신 번호. 계정에 등록된 번호여야 합니다 (예: '07052358010').
             url: 통화 연결 시 TwiML 명령을 반환할 URL.
             status_callback: 통화 상태 변경 시 POST 요청을 받을 콜백 URL.

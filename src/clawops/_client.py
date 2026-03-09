@@ -10,7 +10,6 @@ from ._exceptions import ClawOpsError
 from .resources.accounts import AccountContext, AsyncAccountContext
 from .resources.calls import AsyncCalls, Calls
 from .resources.numbers import AsyncNumbers, Numbers
-from .resources.sip import AsyncSip, Sip
 from .webhooks import Webhooks
 
 
@@ -85,11 +84,6 @@ class ClawOps(SyncAPIClient):
         return Numbers(client=self, account_id=self._default_account_id)
 
     @property
-    def sip(self) -> Sip:
-        """SIP 리소스에 접근합니다."""
-        return Sip(client=self, account_id=self._default_account_id)
-
-    @property
     def webhooks(self) -> Webhooks:
         """Webhook 서명 검증 유틸리티."""
         return Webhooks()
@@ -158,10 +152,6 @@ class AsyncClawOps(AsyncAPIClient):
     @property
     def numbers(self) -> AsyncNumbers:
         return AsyncNumbers(client=self, account_id=self._default_account_id)
-
-    @property
-    def sip(self) -> AsyncSip:
-        return AsyncSip(client=self, account_id=self._default_account_id)
 
     @property
     def webhooks(self) -> Webhooks:

@@ -175,23 +175,6 @@ number = client.numbers.update("07012340001", webhook_url="https://my-app.com/we
 client.numbers.delete("07012340001")
 ```
 
-### SIP 자격증명 (SIP Credentials)
-
-```python
-# SIP 자격증명 생성
-cred = client.sip.credentials.create(display_name="Office Phone")
-print(cred.credential_id, cred.sip_username)
-
-# 자격증명 목록 조회
-creds = client.sip.credentials.list()
-
-# 특정 자격증명 조회
-cred = client.sip.credentials.get("clu1abc2def3ghi")
-
-# 자격증명 삭제
-client.sip.credentials.delete("clu1abc2def3ghi")
-```
-
 ### 멀티 계정 접근
 
 ```python

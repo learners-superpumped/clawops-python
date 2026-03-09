@@ -1,6 +1,5 @@
 from clawops.types.call_params import CallCreateParams, CallListParams, CallUpdateParams
 from clawops.types.number_params import NumberCreateParams, NumberUpdateParams
-from clawops.types.sip.credential_params import SipCredentialCreateParams
 
 
 def test_call_create_params_structure():
@@ -19,15 +18,10 @@ def test_call_update_params_structure():
 
 
 def test_number_create_params_structure():
-    params: NumberCreateParams = {"source": "sip", "number": "1001"}
-    assert params["source"] == "sip"
+    params: NumberCreateParams = {"webhook_url": "https://example.com"}
+    assert params["webhook_url"] == "https://example.com"
 
 
 def test_number_update_params_structure():
     params: NumberUpdateParams = {"webhook_url": "https://example.com", "webhook_method": "POST"}
     assert params["webhook_url"] == "https://example.com"
-
-
-def test_sip_credential_create_params_structure():
-    params: SipCredentialCreateParams = {"display_name": "Office Phone"}
-    assert params["display_name"] == "Office Phone"

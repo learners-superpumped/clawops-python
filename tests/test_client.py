@@ -5,7 +5,6 @@ import respx
 from clawops import ClawOps, AsyncClawOps
 from clawops.resources.calls import Calls, AsyncCalls
 from clawops.resources.numbers import Numbers, AsyncNumbers
-from clawops.resources.sip import Sip, AsyncSip
 from clawops._exceptions import ClawOpsError
 
 BASE = "https://api.claw-ops.com"
@@ -16,7 +15,6 @@ class TestClawOpsClient:
         client = ClawOps(api_key="sk_test", account_id="AC123")
         assert isinstance(client.calls, Calls)
         assert isinstance(client.numbers, Numbers)
-        assert isinstance(client.sip, Sip)
         client.close()
 
     def test_env_var_init(self, monkeypatch):
@@ -67,7 +65,6 @@ class TestAsyncClawOps:
         client = AsyncClawOps(api_key="sk_test", account_id="AC123")
         assert isinstance(client.calls, AsyncCalls)
         assert isinstance(client.numbers, AsyncNumbers)
-        assert isinstance(client.sip, AsyncSip)
         await client.close()
 
     @pytest.mark.asyncio
