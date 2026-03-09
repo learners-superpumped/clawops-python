@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from contextlib import nullcontext
 from typing import Any, Callable, Awaitable
 
 from .._exceptions import AgentError
@@ -19,6 +20,7 @@ from ._tool import ToolRegistry
 from .pipeline._base import STT, LLM, TTS
 from .pipeline._realtime_session import RealtimeConfig, RealtimeSession
 from .tracing import TracingConfig
+from .tracing._spans import call_span
 
 log = logging.getLogger("clawops.agent")
 
@@ -143,54 +145,60 @@ class ClawOpsAgent:
         asyncio.create_task(self._start_call_session(call, media_url))
 
     async def _start_call_session(self, call: CallSession, media_url: str) -> None:
-        recorder: AudioRecorder | None = None
-        if self._recording:
-            recorder = AudioRecorder(self._recording_path, call.call_id)
-            recorder.start()
+        ctx = call_span(
+            call.call_id,
+            from_number=call.from_number,
+            to_number=call.to_number,
+        ) if self._tracing else nullcontext()
+        with ctx:
+            recorder: AudioRecorder | None = None
+            if self._recording:
+                recorder = AudioRecorder(self._recording_path, call.call_id)
+                recorder.start()
 
-        mcp_clients: list[MCPClient] = []
-        if self._mcp_servers:
-            log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
-            for server_config in self._mcp_servers:
-                client = MCPClient(server_config)
-                await client.connect()
-                mcp_clients.append(client)
-            self._tool_registry.register_mcp_tools(mcp_clients)
+            mcp_clients: list[MCPClient] = []
+            if self._mcp_servers:
+                log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
+                for server_config in self._mcp_servers:
+                    client = MCPClient(server_config)
+                    await client.connect()
+                    mcp_clients.append(client)
+                self._tool_registry.register_mcp_tools(mcp_clients)
 
-        realtime = RealtimeSession(self._config, self._tool_registry, recorder=recorder)
+            realtime = RealtimeSession(self._config, self._tool_registry, recorder=recorder)
 
-        async def on_audio(pcm: bytes, ts: int) -> None:
-            if recorder:
-                recorder.write_inbound(pcm)
-            await realtime.feed_audio(pcm, ts)
+            async def on_audio(pcm: bytes, ts: int) -> None:
+                if recorder:
+                    recorder.write_inbound(pcm)
+                await realtime.feed_audio(pcm, ts)
 
-        media_ws = MediaWebSocket(
-            url=media_url,
-            api_key=self._api_key,
-            on_audio=on_audio,
-            on_start=lambda info: self._on_media_start(call, info),
-            on_stop=lambda: self._on_media_stop(call, realtime),
-        )
+            media_ws = MediaWebSocket(
+                url=media_url,
+                api_key=self._api_key,
+                on_audio=on_audio,
+                on_start=lambda info: self._on_media_start(call, info),
+                on_stop=lambda: self._on_media_stop(call, realtime),
+            )
 
-        call._send_audio_fn = media_ws.send_audio
-        call._send_clear_fn = media_ws.send_clear
-        call._hangup_fn = lambda: media_ws.close()
+            call._send_audio_fn = media_ws.send_audio
+            call._send_clear_fn = media_ws.send_clear
+            call._hangup_fn = lambda: media_ws.close()
 
-        await call._emit("call_start")
-        await realtime.start(call)
+            await call._emit("call_start")
+            await realtime.start(call)
 
-        try:
-            await media_ws.connect()
-        finally:
-            await realtime.stop()
-            if mcp_clients:
-                self._tool_registry.clear_mcp_tools()
-                for c in mcp_clients:
-                    await c.close()
-            if recorder:
-                recorder.stop()
-            await call._emit("call_end")
-            self._active_sessions.pop(call.call_id, None)
+            try:
+                await media_ws.connect()
+            finally:
+                await realtime.stop()
+                if mcp_clients:
+                    self._tool_registry.clear_mcp_tools()
+                    for c in mcp_clients:
+                        await c.close()
+                if recorder:
+                    recorder.stop()
+                await call._emit("call_end")
+                self._active_sessions.pop(call.call_id, None)
 
     async def _on_media_start(self, call: CallSession, info: dict[str, Any]) -> None:
         log.info(f"Media stream started: {call.call_id}")

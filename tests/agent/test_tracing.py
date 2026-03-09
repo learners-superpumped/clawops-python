@@ -1,7 +1,8 @@
 """OpenTelemetry tracing 테스트."""
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+import pytest
+from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestTracingConfig:
@@ -213,3 +214,81 @@ class TestAgentTracingParam:
             from_="+821000000000",
         )
         assert agent._tracing is None
+
+
+class TestCallSpanInstrumentation:
+    @pytest.mark.asyncio
+    async def test_start_call_session_uses_call_span_when_tracing(self):
+        """_start_call_session이 tracing 활성화 시 call_span을 호출하는지 확인."""
+        from clawops.agent._agent import ClawOpsAgent
+        from clawops.agent.tracing import TracingConfig
+
+        agent = ClawOpsAgent(
+            api_key="test",
+            account_id="acc",
+            from_="+821000000000",
+            tracing=TracingConfig(),
+        )
+
+        mock_call = MagicMock()
+        mock_call.call_id = "call-001"
+        mock_call.from_number = "+821012345678"
+        mock_call.to_number = "+821000000000"
+        mock_call._emit = AsyncMock()
+        mock_call._send_audio_fn = None
+        mock_call._send_clear_fn = None
+        mock_call._hangup_fn = None
+
+        with patch("clawops.agent._agent.call_span") as mock_span, \
+             patch("clawops.agent._agent.MediaWebSocket") as mock_mws, \
+             patch("clawops.agent._agent.RealtimeSession") as mock_rt:
+            mock_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
+            mock_span.return_value.__exit__ = MagicMock(return_value=False)
+            mock_mws.return_value.connect = AsyncMock()
+            mock_mws.return_value.send_audio = AsyncMock()
+            mock_mws.return_value.send_clear = AsyncMock()
+            mock_mws.return_value.close = AsyncMock()
+            mock_rt.return_value.start = AsyncMock()
+            mock_rt.return_value.stop = AsyncMock()
+
+            await agent._start_call_session(mock_call, "wss://media")
+
+            mock_span.assert_called_once_with(
+                "call-001",
+                from_number="+821012345678",
+                to_number="+821000000000",
+            )
+
+    @pytest.mark.asyncio
+    async def test_start_call_session_no_span_without_tracing(self):
+        """tracing 비활성화 시 call_span을 호출하지 않는지 확인."""
+        from clawops.agent._agent import ClawOpsAgent
+
+        agent = ClawOpsAgent(
+            api_key="test",
+            account_id="acc",
+            from_="+821000000000",
+        )
+
+        mock_call = MagicMock()
+        mock_call.call_id = "call-002"
+        mock_call.from_number = "+82"
+        mock_call.to_number = "+82"
+        mock_call._emit = AsyncMock()
+        mock_call._send_audio_fn = None
+        mock_call._send_clear_fn = None
+        mock_call._hangup_fn = None
+
+        with patch("clawops.agent._agent.call_span") as mock_span, \
+             patch("clawops.agent._agent.MediaWebSocket") as mock_mws, \
+             patch("clawops.agent._agent.RealtimeSession") as mock_rt:
+            mock_mws.return_value.connect = AsyncMock()
+            mock_mws.return_value.send_audio = AsyncMock()
+            mock_mws.return_value.send_clear = AsyncMock()
+            mock_mws.return_value.close = AsyncMock()
+            mock_rt.return_value.start = AsyncMock()
+            mock_rt.return_value.stop = AsyncMock()
+
+            await agent._start_call_session(mock_call, "wss://media")
+
+            mock_span.assert_not_called()
