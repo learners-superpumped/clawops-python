@@ -85,6 +85,15 @@ class DeepgramSTT:
                             data = json.loads(msg.data)
                             msg_type = data.get("type", "")
 
+                            if msg_type == "SpeechStarted":
+                                if not speech_notified:
+                                    speech_notified = True
+                                    log.info("Speech started (VAD)")
+                                    await event_queue.put(
+                                        SpeechEvent(type="interim", transcript="")
+                                    )
+                                continue
+
                             if msg_type == "Results":
                                 is_final = data.get("is_final", False)
                                 speech_final = data.get("speech_final", False)
