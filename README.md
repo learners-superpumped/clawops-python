@@ -128,7 +128,7 @@ agent = ClawOpsAgent(
 **Span 계층:**
 - `call` → `mcp.connect` → `llm.session` → `tool.call` → `mcp.call_tool`
 
-> 자세한 사용법은 **[Agent 문서](docs/agent.md)** 를 참고하세요. (Tool, 이벤트, 통화 녹음, 파이프라인 모드, MCP 연동, Tracing 등)
+> 자세한 사용법은 **[Agent 문서](docs/agent/)** 를 참고하세요. (Tool, 이벤트, 통화 녹음, 파이프라인 모드, 커스텀 제공자, MCP 연동, Tracing 등)
 
 ## REST API 사용법
 
@@ -346,7 +346,7 @@ client = ClawOps(
 
 ## 문서
 
-- **[AI Agent 가이드](docs/agent.md)** — 음성 에이전트 상세 사용법, 파이프라인 모드, MCP 연동
+- **[AI Agent 가이드](docs/agent/)** — 음성 에이전트 상세 사용법, 파이프라인 모드, 커스텀 제공자, MCP 연동
 
 ## 요구사항
 
