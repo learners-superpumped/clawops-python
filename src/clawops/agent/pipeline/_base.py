@@ -1,13 +1,25 @@
 """Provider Protocol 정의. 유저가 이 Protocol에 맞추면 아무 프로바이더나 사용 가능."""
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Literal, Protocol, runtime_checkable
+
+
+@dataclass(frozen=True, slots=True)
+class SpeechEvent:
+    """STT 이벤트.
+
+    - interim: 사용자가 말하고 있음 (barge-in 트리거용, transcript는 불완전할 수 있음)
+    - final: 발화 완료 (확정된 transcript)
+    """
+    type: Literal["interim", "final"]
+    transcript: str
 
 
 @runtime_checkable
 class STT(Protocol):
-    async def transcribe(self, audio_stream: AsyncIterator[bytes]) -> AsyncIterator[str]:
-        """오디오 스트림(PCM16 8kHz) -> 텍스트 스트림."""
+    async def transcribe(self, audio_stream: AsyncIterator[bytes]) -> AsyncIterator[SpeechEvent]:
+        """오디오 스트림(PCM16) -> SpeechEvent 스트림."""
         ...
 
 @runtime_checkable
@@ -23,5 +35,5 @@ class LLM(Protocol):
 @runtime_checkable
 class TTS(Protocol):
     async def synthesize(self, text_stream: AsyncIterator[str]) -> AsyncIterator[bytes]:
-        """텍스트 스트림 -> 오디오(PCM16 8kHz) 스트림."""
+        """텍스트 스트림 -> 오디오(PCM16) 스트림."""
         ...

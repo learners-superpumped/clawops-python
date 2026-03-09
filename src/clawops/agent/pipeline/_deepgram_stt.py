@@ -9,6 +9,8 @@ from typing import AsyncIterator
 
 import aiohttp
 
+from ._base import SpeechEvent
+
 log = logging.getLogger("clawops.agent.pipeline")
 
 DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen"
@@ -40,8 +42,8 @@ class DeepgramSTT:
         self._endpointing = endpointing
         self._utterance_end_ms = utterance_end_ms
 
-    async def transcribe(self, audio_stream: AsyncIterator[bytes]) -> AsyncIterator[str]:
-        """오디오 스트림(PCM16) → 텍스트 스트림. speech_final=True일 때 yield."""
+    async def transcribe(self, audio_stream: AsyncIterator[bytes]) -> AsyncIterator[SpeechEvent]:
+        """오디오 스트림(PCM16) → SpeechEvent 스트림."""
         params = (
             f"model={self._model}&language={self._language}"
             f"&sample_rate={self._sample_rate}&encoding={self._encoding}"
@@ -60,7 +62,8 @@ class DeepgramSTT:
             )
             log.info("Deepgram STT connected")
 
-            text_queue: asyncio.Queue[str | None] = asyncio.Queue()
+            event_queue: asyncio.Queue[SpeechEvent | None] = asyncio.Queue()
+            speech_notified = False
 
             async def send_audio() -> None:
                 try:
@@ -75,6 +78,7 @@ class DeepgramSTT:
                         await ws.send_bytes(b"")
 
             async def recv_results() -> None:
+                nonlocal speech_notified
                 try:
                     async for msg in ws:
                         if msg.type == aiohttp.WSMsgType.TEXT:
@@ -88,25 +92,37 @@ class DeepgramSTT:
                                 alts = channel.get("alternatives", [])
                                 transcript = alts[0].get("transcript", "") if alts else ""
 
-                                if transcript and (is_final and speech_final):
-                                    await text_queue.put(transcript)
+                                # interim result → barge-in 이벤트 (발화 시작 시 1회)
+                                if transcript and not is_final and not speech_notified:
+                                    speech_notified = True
+                                    log.info(f"Speech detected (interim): {transcript[:40]}")
+                                    await event_queue.put(
+                                        SpeechEvent(type="interim", transcript=transcript)
+                                    )
+
+                                # final result → 확정 transcript
+                                if transcript and is_final and speech_final:
+                                    speech_notified = False
+                                    await event_queue.put(
+                                        SpeechEvent(type="final", transcript=transcript)
+                                    )
 
                         elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                             break
                 except Exception as e:
                     log.error(f"Deepgram recv error: {e}")
                 finally:
-                    await text_queue.put(None)
+                    await event_queue.put(None)
 
             send_task = asyncio.create_task(send_audio())
             recv_task = asyncio.create_task(recv_results())
 
             try:
                 while True:
-                    text = await text_queue.get()
-                    if text is None:
+                    event = await event_queue.get()
+                    if event is None:
                         break
-                    yield text
+                    yield event
             finally:
                 send_task.cancel()
                 recv_task.cancel()

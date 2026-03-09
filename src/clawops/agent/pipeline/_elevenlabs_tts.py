@@ -78,13 +78,17 @@ class ElevenLabsTTS:
                 try:
                     async for text in text_stream:
                         if ws.closed:
+                            log.warning("ElevenLabs WS closed before sending text")
                             break
+                        log.info(f"ElevenLabs sending text: {text[:60]}")
                         await ws.send_str(json.dumps({"text": text}))
                 except Exception as e:
                     log.error(f"ElevenLabs send error: {e}")
                 finally:
                     if not ws.closed:
+                        log.info("ElevenLabs sending EOS")
                         await ws.send_str(json.dumps({"text": ""}))
+                    log.info("ElevenLabs send_text done")
 
             async def recv_audio() -> None:
                 try:
@@ -93,12 +97,17 @@ class ElevenLabsTTS:
                             data = json.loads(msg.data)
                             if "audio" in data and data["audio"]:
                                 audio = base64.b64decode(data["audio"])
+                                log.info(f"ElevenLabs recv audio: {len(audio)} bytes")
                                 await audio_queue.put(audio)
+                            else:
+                                log.debug(f"ElevenLabs msg (no audio): {str(data)[:120]}")
                         elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
+                            log.info(f"ElevenLabs WS closed/error: {msg.type}")
                             break
                 except Exception as e:
                     log.error(f"ElevenLabs recv error: {e}")
                 finally:
+                    log.info("ElevenLabs recv_audio done")
                     await audio_queue.put(None)
 
             send_task = asyncio.create_task(send_text())

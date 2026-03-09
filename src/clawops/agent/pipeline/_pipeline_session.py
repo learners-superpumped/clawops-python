@@ -11,11 +11,33 @@ from .._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
-from ._base import STT, LLM, TTS
+from ._base import STT, LLM, TTS, SpeechEvent
 
 log = logging.getLogger("clawops.agent.pipeline")
 
 _SENTENCE_END = re.compile(r'[.!?。！？]\s*$')
+
+
+def _to_chat_tools(realtime_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Realtime API 포맷 tool 스키마를 Chat Completions 포맷으로 변환.
+
+    Realtime: {"type": "function", "name": ..., "description": ..., "parameters": ...}
+    Chat:     {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+    """
+    result = []
+    for tool in realtime_tools:
+        if "function" in tool and isinstance(tool["function"], dict):
+            result.append(tool)
+        else:
+            result.append({
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("parameters", {"type": "object", "properties": {}}),
+                },
+            })
+    return result
 
 
 class PipelineSession:
@@ -47,6 +69,7 @@ class PipelineSession:
         self._tasks: list[asyncio.Task[Any]] = []
         self._current_response_task: asyncio.Task[Any] | None = None
         self._sent_audio_chunks = 0
+        self._pending_respond_task: asyncio.Task[Any] | None = None
 
     async def start(self, call: CallSession) -> None:
         self._call = call
@@ -65,6 +88,8 @@ class PipelineSession:
     async def stop(self) -> None:
         self._running = False
         await self._audio_queue.put(None)
+        if self._pending_respond_task and not self._pending_respond_task.done():
+            self._pending_respond_task.cancel()
         if self._current_response_task and not self._current_response_task.done():
             self._current_response_task.cancel()
         for task in self._tasks:
@@ -82,21 +107,73 @@ class PipelineSession:
             pcm16k = resample_pcm16(pcm8k, from_rate=8000, to_rate=16000)
             yield pcm16k
 
+    # ── STT 이벤트 처리 ──────────────────────────────────────
+
     async def _stt_loop(self) -> None:
         try:
-            async for transcript in self._stt.transcribe(self._audio_stream()):
-                if not transcript.strip():
-                    continue
-                log.info(f"STT: {transcript}")
-                if self._call:
-                    await self._call._emit("transcript", "user", transcript)
-                await self._interrupt()
-                self._messages.append({"role": "user", "content": transcript})
-                self._current_response_task = asyncio.create_task(self._respond())
+            async for event in self._stt.transcribe(self._audio_stream()):
+                if event.type == "interim":
+                    await self._handle_interim_speech(event)
+                elif event.type == "final":
+                    await self._handle_final_transcript(event)
         except asyncio.CancelledError:
             pass
         except Exception as e:
             log.error(f"STT loop error: {e}")
+
+    async def _handle_interim_speech(self, event: SpeechEvent) -> None:
+        """사용자 발화 감지 (interim) → AI 오디오가 재생 중이면 즉시 중단."""
+        if self._sent_audio_chunks > 0:
+            log.info(f"Barge-in: \"{event.transcript[:30]}\" — clearing AI audio")
+            # 응답 생성 중이면 취소
+            if self._current_response_task and not self._current_response_task.done():
+                self._current_response_task.cancel()
+                try:
+                    await self._current_response_task
+                except asyncio.CancelledError:
+                    pass
+            # Twilio 버퍼에 남아있는 오디오 클리어
+            if self._call:
+                await self._call.clear_audio()
+            self._sent_audio_chunks = 0
+
+    async def _handle_final_transcript(self, event: SpeechEvent) -> None:
+        """발화 완료 (final) → 메시지 추가 후 응답 생성."""
+        transcript = event.transcript
+        if not transcript.strip():
+            return
+        log.info(f"STT: {transcript}")
+        if self._call:
+            await self._call._emit("transcript", "user", transcript)
+
+        self._messages.append({"role": "user", "content": transcript})
+
+        if self._sent_audio_chunks > 0:
+            # AI가 아직 말하고 있었다면 인터럽트 (interim에서 이미 중단했을 수도 있음)
+            await self._interrupt()
+            self._current_response_task = asyncio.create_task(self._respond())
+        else:
+            # AI가 아직 말하기 전 → 현재 응답 취소하고 debounce
+            if self._current_response_task and not self._current_response_task.done():
+                self._current_response_task.cancel()
+                try:
+                    await self._current_response_task
+                except asyncio.CancelledError:
+                    pass
+                log.info("Response cancelled (no audio sent yet)")
+            if self._pending_respond_task and not self._pending_respond_task.done():
+                self._pending_respond_task.cancel()
+            self._pending_respond_task = asyncio.create_task(
+                self._debounced_respond(0.5)
+            )
+
+    # ── 응답 생성 ────────────────────────────────────────────
+
+    async def _debounced_respond(self, delay: float) -> None:
+        """delay 동안 추가 입력을 기다린 후 응답 시작."""
+        await asyncio.sleep(delay)
+        log.info("Debounce expired, starting response")
+        self._current_response_task = asyncio.create_task(self._respond())
 
     async def _generate_greeting(self) -> None:
         await asyncio.sleep(0.5)
@@ -106,7 +183,7 @@ class PipelineSession:
         if not self._call:
             return
         try:
-            tool_schemas = self._tools.to_openai_tools()
+            tool_schemas = _to_chat_tools(self._tools.to_openai_tools())
             tool_schemas.append({
                 "type": "function",
                 "function": {
@@ -127,9 +204,11 @@ class PipelineSession:
                         return
                     buffer += token
                     if _SENTENCE_END.search(buffer):
+                        log.info(f"LLM sentence: {buffer[:80]}")
                         yield buffer
                         buffer = ""
                 if buffer.strip():
+                    log.info(f"LLM final: {buffer[:80]}")
                     yield buffer
 
             text_chunks: list[str] = []
@@ -144,6 +223,7 @@ class PipelineSession:
 
             async for audio in self._tts.synthesize(tee_text()):
                 if not self._running or not self._call:
+                    log.warning("TTS audio received but session stopped")
                     break
                 if self._recorder:
                     self._recorder.write_raw_outbound(audio)
@@ -158,6 +238,7 @@ class PipelineSession:
 
             assistant_text = "".join(text_chunks)
             if assistant_text.strip():
+                log.info(f"Assistant: {assistant_text[:100]}")
                 self._messages.append({"role": "assistant", "content": assistant_text})
                 if self._call:
                     await self._call._emit("transcript", "assistant", assistant_text)
