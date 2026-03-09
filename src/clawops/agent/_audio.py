@@ -43,6 +43,58 @@ _DECODE_TABLE = (
 )
 
 
+_BIAS = 0x84
+_CLIP = 32635
+
+
+def _encode_ulaw_sample(sample: int) -> int:
+    """PCM16 signed sample → mu-law byte."""
+    sign = 0
+    if sample < 0:
+        sign = 0x80
+        sample = -sample
+    if sample > _CLIP:
+        sample = _CLIP
+    sample += _BIAS
+    exponent = 7
+    for exp_val in (0x4000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100):
+        if sample >= exp_val:
+            break
+        exponent -= 1
+    mantissa = (sample >> (exponent + 3)) & 0x0F
+    return ~(sign | (exponent << 4) | mantissa) & 0xFF
+
+
+def pcm16_to_ulaw(pcm: bytes) -> bytes:
+    """PCM16 signed 16-bit LE → mu-law 바이트 변환."""
+    if not pcm:
+        return b""
+    n_samples = len(pcm) // 2
+    samples = struct.unpack(f"<{n_samples}h", pcm)
+    return bytes(_encode_ulaw_sample(s) for s in samples)
+
+
+def resample_pcm16(pcm: bytes, *, from_rate: int, to_rate: int) -> bytes:
+    """PCM16 리샘플링 (선형 보간)."""
+    if from_rate == to_rate or not pcm:
+        return pcm
+    n_samples = len(pcm) // 2
+    samples = struct.unpack(f"<{n_samples}h", pcm)
+    ratio = from_rate / to_rate
+    out_len = int(n_samples / ratio)
+    out = []
+    for i in range(out_len):
+        src_pos = i * ratio
+        idx = int(src_pos)
+        frac = src_pos - idx
+        if idx + 1 < n_samples:
+            val = samples[idx] * (1 - frac) + samples[idx + 1] * frac
+        else:
+            val = samples[idx]
+        out.append(int(val))
+    return struct.pack(f"<{len(out)}h", *out)
+
+
 def ulaw_to_pcm16(ulaw: bytes) -> bytes:
     """mu-law 바이트를 PCM16 signed 16-bit little-endian 바이트로 변환."""
     if not ulaw:
