@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .calls import AsyncCalls, Calls
+from .messages import AsyncMessages, Messages
 from .numbers import AsyncNumbers, Numbers
 
 if TYPE_CHECKING:
@@ -28,6 +29,10 @@ class AccountContext:
         return Calls(client=self._client, account_id=self._account_id)
 
     @property
+    def messages(self) -> Messages:
+        return Messages(client=self._client, account_id=self._account_id)
+
+    @property
     def numbers(self) -> Numbers:
         return Numbers(client=self._client, account_id=self._account_id)
 
@@ -42,6 +47,10 @@ class AsyncAccountContext:
     @property
     def calls(self) -> AsyncCalls:
         return AsyncCalls(client=self._client, account_id=self._account_id)
+
+    @property
+    def messages(self) -> AsyncMessages:
+        return AsyncMessages(client=self._client, account_id=self._account_id)
 
     @property
     def numbers(self) -> AsyncNumbers:

@@ -9,6 +9,7 @@ from ._constants import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT
 from ._exceptions import ClawOpsError
 from .resources.accounts import AccountContext, AsyncAccountContext
 from .resources.calls import AsyncCalls, Calls
+from .resources.messages import AsyncMessages, Messages
 from .resources.numbers import AsyncNumbers, Numbers
 from .webhooks import Webhooks
 
@@ -84,6 +85,11 @@ class ClawOps(SyncAPIClient):
         return Numbers(client=self, account_id=self._default_account_id)
 
     @property
+    def messages(self) -> Messages:
+        """메시지(Messages) 리소스에 접근합니다."""
+        return Messages(client=self, account_id=self._default_account_id)
+
+    @property
     def webhooks(self) -> Webhooks:
         """Webhook 서명 검증 유틸리티."""
         return Webhooks()
@@ -152,6 +158,10 @@ class AsyncClawOps(AsyncAPIClient):
     @property
     def numbers(self) -> AsyncNumbers:
         return AsyncNumbers(client=self, account_id=self._default_account_id)
+
+    @property
+    def messages(self) -> AsyncMessages:
+        return AsyncMessages(client=self, account_id=self._default_account_id)
 
     @property
     def webhooks(self) -> Webhooks:
