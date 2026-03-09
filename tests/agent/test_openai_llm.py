@@ -1,4 +1,5 @@
 import json
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,7 +29,10 @@ async def test_openai_llm_generate_text():
     mock_client.chat.completions.create = AsyncMock(return_value=mock_stream())
     mock_client.close = AsyncMock()
 
-    with patch("openai.AsyncOpenAI", return_value=mock_client):
+    mock_openai = MagicMock()
+    mock_openai.AsyncOpenAI = MagicMock(return_value=mock_client)
+
+    with patch.dict(sys.modules, {"openai": mock_openai}):
         llm = OpenAILLM(api_key="test-key")
         messages = [{"role": "user", "content": "인사해주세요"}]
         result = []
@@ -61,7 +65,10 @@ async def test_openai_llm_generate_tool_call():
     mock_client.chat.completions.create = AsyncMock(return_value=mock_stream())
     mock_client.close = AsyncMock()
 
-    with patch("openai.AsyncOpenAI", return_value=mock_client):
+    mock_openai = MagicMock()
+    mock_openai.AsyncOpenAI = MagicMock(return_value=mock_client)
+
+    with patch.dict(sys.modules, {"openai": mock_openai}):
         llm = OpenAILLM(api_key="test-key")
         messages = [{"role": "user", "content": "서울 날씨"}]
         tools = [{"type": "function", "function": {"name": "get_weather", "parameters": {}}}]

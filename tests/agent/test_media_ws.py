@@ -15,7 +15,7 @@ def test_parse_media_event():
         },
     }
     result = parse_media_event(event)
-    assert result["pcm16"] == pcm
+    assert result["audio"] == pcm
     assert result["timestamp"] == 100
 
 

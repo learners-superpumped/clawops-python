@@ -52,4 +52,7 @@ async def test_deepgram_stt_transcribe():
         async for text in stt.transcribe(fake_audio()):
             results.append(text)
 
-    assert "안녕하세요" in results
+    assert len(results) > 0
+    final_events = [e for e in results if e.type == "final"]
+    assert len(final_events) == 1
+    assert final_events[0].transcript == "안녕하세요"

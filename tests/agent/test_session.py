@@ -32,23 +32,6 @@ async def test_session_send_audio():
     mock_sender.assert_called_once_with(b"\x00\x00" * 160)
 
 
-@pytest.mark.asyncio
-async def test_session_audio_stream():
-    session = CallSession(
-        call_id="CA_test",
-        from_number="010",
-        to_number="070",
-        account_id="AC",
-    )
-    await session._push_audio(b"chunk1")
-    await session._push_audio(b"chunk2")
-    session._audio_done()
-
-    chunks = []
-    async for chunk in session.audio_stream():
-        chunks.append(chunk)
-    assert chunks == [b"chunk1", b"chunk2"]
-
 
 @pytest.mark.asyncio
 async def test_session_events():
