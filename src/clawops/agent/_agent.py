@@ -18,6 +18,7 @@ from ._recorder import AudioRecorder
 from ._tool import ToolRegistry
 from .pipeline._base import STT, LLM, TTS
 from .pipeline._realtime_session import RealtimeConfig, RealtimeSession
+from .tracing import TracingConfig
 
 log = logging.getLogger("clawops.agent")
 
@@ -43,6 +44,7 @@ class ClawOpsAgent:
         mcp_servers: list[Any] | None = None,
         recording: bool = False,
         recording_path: str = "./recordings",
+        tracing: TracingConfig | None = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -81,6 +83,7 @@ class ClawOpsAgent:
         self._mcp_servers = mcp_servers or []
         self._recording = recording
         self._recording_path = recording_path
+        self._tracing = tracing
 
         self._tool_registry = ToolRegistry()
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}

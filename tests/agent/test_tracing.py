@@ -188,3 +188,28 @@ class TestTracingExtra:
         assert "tracing" in extras
         deps = extras["tracing"]
         assert any("opentelemetry-api" in d for d in deps)
+
+
+class TestAgentTracingParam:
+    def test_agent_accepts_tracing_config(self):
+        from clawops.agent import ClawOpsAgent
+        from clawops.agent.tracing import TracingConfig
+
+        agent = ClawOpsAgent(
+            api_key="test",
+            account_id="acc",
+            from_="+821000000000",
+            tracing=TracingConfig(),
+        )
+        assert agent._tracing is not None
+        assert agent._tracing.enabled is True
+
+    def test_agent_tracing_default_none(self):
+        from clawops.agent import ClawOpsAgent
+
+        agent = ClawOpsAgent(
+            api_key="test",
+            account_id="acc",
+            from_="+821000000000",
+        )
+        assert agent._tracing is None
