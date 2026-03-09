@@ -30,16 +30,16 @@ def parse_start_event(data: dict[str, Any]) -> dict[str, Any]:
 def parse_media_event(data: dict[str, Any]) -> dict[str, Any]:
     media = data["media"]
     return {
-        "pcm16": base64.b64decode(media["payload"]),
+        "audio": base64.b64decode(media["payload"]),
         "timestamp": int(media.get("timestamp", 0)),
     }
 
 
-def build_media_response(pcm16: bytes) -> dict[str, Any]:
+def build_media_response(audio: bytes) -> dict[str, Any]:
     return {
         "event": "media",
         "media": {
-            "payload": base64.b64encode(pcm16).decode(),
+            "payload": base64.b64encode(audio).decode(),
         },
     }
 
@@ -85,7 +85,7 @@ class MediaWebSocket:
                         await self._on_start(parse_start_event(data))
                     elif event == "media":
                         parsed = parse_media_event(data)
-                        await self._on_audio(parsed["pcm16"], parsed["timestamp"])
+                        await self._on_audio(parsed["audio"], parsed["timestamp"])
                     elif event == "stop":
                         await self._on_stop()
                         break

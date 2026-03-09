@@ -36,9 +36,9 @@ class CallSession:
     def duration(self) -> float:
         return (datetime.now() - self.start_time).total_seconds()
 
-    async def send_audio(self, pcm16: bytes) -> None:
+    async def send_audio(self, audio: bytes) -> None:
         if self._send_audio_fn:
-            await self._send_audio_fn(pcm16)
+            await self._send_audio_fn(audio)
 
     async def clear_audio(self) -> None:
         if self._send_clear_fn:

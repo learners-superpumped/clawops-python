@@ -14,7 +14,6 @@ from typing import Any
 
 import aiohttp
 
-from .._audio import pcm16_to_ulaw, ulaw_to_pcm16
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -111,12 +110,12 @@ class RealtimeSession:
         self._tasks.append(asyncio.create_task(self._receive_loop()))
         self._tasks.append(asyncio.create_task(self._audio_send_loop()))
 
-    async def feed_audio(self, pcm16: bytes, timestamp: int) -> None:
+    async def feed_audio(self, audio: bytes, timestamp: int) -> None:
         self._latest_media_ts = timestamp
-        ulaw = pcm16_to_ulaw(pcm16)
+        # Agent 경로: 플랫폼에서 ulaw 직통으로 받으므로 변환 불필요
         await self._send({
             "type": "input_audio_buffer.append",
-            "audio": base64.b64encode(ulaw).decode(),
+            "audio": base64.b64encode(audio).decode(),
         })
 
     async def _receive_loop(self) -> None:
@@ -149,10 +148,10 @@ class RealtimeSession:
             ulaw = base64.b64decode(event["delta"])
             if self._recorder:
                 self._recorder.write_raw_outbound(ulaw)
-            pcm16 = ulaw_to_pcm16(ulaw)
-            chunk_size = 320  # 320B = 20ms at 8kHz 16-bit
-            for off in range(0, len(pcm16), chunk_size):
-                self._audio_queue.put_nowait(pcm16[off : off + chunk_size])
+            # ulaw 직통 전송 (PCM16 변환 불필요 — 플랫폼도 ulaw 사용)
+            chunk_size = 160  # 160B = 20ms at 8kHz ulaw
+            for off in range(0, len(ulaw), chunk_size):
+                self._audio_queue.put_nowait(ulaw[off : off + chunk_size])
 
         elif event_type == "input_audio_buffer.speech_started":
             await self._handle_truncation()
@@ -242,8 +241,6 @@ class RealtimeSession:
                 if self._call:
                     await self._call.send_audio(chunk)
                 self._sent_audio_chunks += 1
-                if self._recorder:
-                    self._recorder.write_outbound(chunk)
         except asyncio.CancelledError:
             pass
 
