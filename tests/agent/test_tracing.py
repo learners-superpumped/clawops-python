@@ -343,3 +343,32 @@ class TestMCPConnectSpanInstrumentation:
             await agent._start_call_session(mock_call, "wss://media")
 
             mock_mcs.assert_called_once_with("stdio", command="npx")
+
+
+class TestMCPCallToolSpanInstrumentation:
+    @pytest.mark.asyncio
+    async def test_call_tool_uses_span(self):
+        from clawops.agent.mcp._client import MCPClient
+        from clawops.agent.mcp import MCPServerStdio
+
+        server = MCPServerStdio("npx")
+        client = MCPClient(server)
+
+        mock_session = AsyncMock()
+        block = MagicMock()
+        block.type = "text"
+        block.text = "result"
+        result_mock = MagicMock()
+        result_mock.isError = False
+        result_mock.content = [block]
+        mock_session.call_tool = AsyncMock(return_value=result_mock)
+        client._session = mock_session
+
+        with patch("clawops.agent.mcp._client.mcp_call_tool_span") as mock_span:
+            mock_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
+            mock_span.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = await client.call_tool("search", {"q": "test"})
+
+            assert result == "result"
+            mock_span.assert_called_once_with("search")

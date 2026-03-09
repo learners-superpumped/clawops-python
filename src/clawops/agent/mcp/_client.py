@@ -8,6 +8,7 @@ from typing import Any
 from ._http import MCPServerHTTP
 from ._stdio import MCPServerStdio
 from ..._exceptions import AgentError
+from ..tracing._spans import mcp_call_tool_span
 
 log = logging.getLogger("clawops.agent")
 
@@ -136,12 +137,15 @@ class MCPClient:
         assert self._session is not None, "connect()를 먼저 호출하세요."
         log.debug("MCP call_tool: %s(%s)", name, arguments)
 
-        result = await self._session.call_tool(name, arguments=arguments)
-        texts = [
-            block.text for block in result.content if block.type == "text"
-        ]
-        output = "\n".join(texts)
+        with mcp_call_tool_span(name) as span:
+            result = await self._session.call_tool(name, arguments=arguments)
+            texts = [
+                block.text for block in result.content if block.type == "text"
+            ]
+            output = "\n".join(texts)
 
-        if result.isError:
-            return f"MCP Error: {output}"
-        return output
+            if result.isError:
+                if span:
+                    span.set_attribute("mcp.tool.is_error", True)
+                return f"MCP Error: {output}"
+            return output
