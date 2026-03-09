@@ -157,6 +157,9 @@ class ClawOpsAgent:
                 recorder = AudioRecorder(self._recording_path, call.call_id)
                 recorder.start()
 
+            # 콜별 독립 ToolRegistry (동시 통화 간 MCP tool 충돌 방지)
+            call_tools = self._tool_registry.fork()
+
             mcp_clients: list[MCPClient] = []
             if self._mcp_servers:
                 log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
@@ -170,9 +173,9 @@ class ClawOpsAgent:
                         client = MCPClient(server_config)
                         await client.connect()
                         mcp_clients.append(client)
-                self._tool_registry.register_mcp_tools(mcp_clients)
+                call_tools.register_mcp_tools(mcp_clients)
 
-            realtime = RealtimeSession(self._config, self._tool_registry, recorder=recorder)
+            realtime = RealtimeSession(self._config, call_tools, recorder=recorder)
 
             async def on_audio(pcm: bytes, ts: int) -> None:
                 if recorder:
@@ -199,7 +202,7 @@ class ClawOpsAgent:
             finally:
                 await realtime.stop()
                 if mcp_clients:
-                    self._tool_registry.clear_mcp_tools()
+                    call_tools.clear_mcp_tools()
                     for c in mcp_clients:
                         await c.close()
                 if recorder:

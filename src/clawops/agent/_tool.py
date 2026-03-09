@@ -79,6 +79,12 @@ class ToolRegistry:
             log.debug("Clearing %d MCP tools", len(self._mcp_tools))
         self._mcp_tools.clear()
 
+    def fork(self) -> "ToolRegistry":
+        """로컬 tool을 복사한 새 ToolRegistry를 반환 (MCP tool은 비어있음)."""
+        copy = ToolRegistry()
+        copy._tools = dict(self._tools)
+        return copy
+
     def __contains__(self, name: str) -> bool:
         return name in self._tools or name in self._mcp_tools
 
