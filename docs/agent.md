@@ -601,7 +601,7 @@ ClawOpsAgent
 │
 ├── MediaWebSocket (콜별)   # 오디오 스트리밍 (VoiceML Stream Protocol)
 │   ├── start               # 미디어 스트림 시작
-│   ├── media               # PCM16 8kHz base64 오디오
+│   ├── media               # G.711 μ-law 8kHz base64 오디오
 │   ├── mark                # 재생 완료 추적
 │   ├── clear               # 버퍼 flush (barge-in)
 │   └── stop                # 미디어 스트림 종료
