@@ -228,6 +228,7 @@ class RealtimeSession:
         self._response_start_ts = None
 
     async def _audio_send_loop(self) -> None:
+        """OpenAI 응답 오디오를 플랫폼으로 전송 (pacing은 플랫폼이 처리)."""
         try:
             while True:
                 chunk = await self._audio_queue.get()
@@ -237,7 +238,6 @@ class RealtimeSession:
                     await self._call.send_audio(chunk)
                 if self._recorder:
                     self._recorder.write_outbound(chunk)
-                await asyncio.sleep(0.02)
         except asyncio.CancelledError:
             pass
 
