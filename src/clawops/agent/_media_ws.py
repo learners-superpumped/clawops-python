@@ -1,7 +1,7 @@
 """Media WebSocket: per-call 오디오 스트림.
 
 ClawOps VoiceML Stream 프로토콜을 구현한다:
-connected -> start -> media (PCM16 8kHz base64) -> mark -> stop
+connected -> start -> media (G.711 ulaw 8kHz base64) -> mark -> stop
 """
 from __future__ import annotations
 
@@ -97,8 +97,8 @@ class MediaWebSocket:
         finally:
             await self.close()
 
-    async def send_audio(self, pcm16: bytes) -> None:
-        self._audio_queue.put_nowait(pcm16)
+    async def send_audio(self, audio: bytes) -> None:
+        self._audio_queue.put_nowait(audio)
 
     async def send_clear(self) -> None:
         while not self._audio_queue.empty():

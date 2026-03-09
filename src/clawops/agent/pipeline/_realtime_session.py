@@ -54,7 +54,6 @@ class RealtimeSession:
         self._latest_media_ts: int = 0
         self._sent_audio_chunks: int = 0
         self._recorder = recorder
-        self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._tasks: list[asyncio.Task[Any]] = []
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
@@ -108,7 +107,6 @@ class RealtimeSession:
             await self._send({"type": "response.create"})
 
         self._tasks.append(asyncio.create_task(self._receive_loop()))
-        self._tasks.append(asyncio.create_task(self._audio_send_loop()))
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
         self._latest_media_ts = timestamp
@@ -148,10 +146,11 @@ class RealtimeSession:
             ulaw = base64.b64decode(event["delta"])
             if self._recorder:
                 self._recorder.write_raw_outbound(ulaw)
-            # ulaw 직통 전송 (PCM16 변환 불필요 — 플랫폼도 ulaw 사용)
+            # ulaw 직통 전송 — 중간 큐 없이 바로 플랫폼으로
             chunk_size = 160  # 160B = 20ms at 8kHz ulaw
             for off in range(0, len(ulaw), chunk_size):
-                self._audio_queue.put_nowait(ulaw[off : off + chunk_size])
+                await self._call.send_audio(ulaw[off : off + chunk_size])
+                self._sent_audio_chunks += 1
 
         elif event_type == "input_audio_buffer.speech_started":
             await self._handle_truncation()
@@ -208,7 +207,7 @@ class RealtimeSession:
         if not self._last_assistant_item or self._response_start_ts is None:
             return
 
-        # 실제 송신한 오디오 양 기반으로 계산 (320B = 20ms per chunk)
+        # 실제 송신한 오디오 양 기반으로 계산 (160B = 20ms per ulaw chunk)
         audio_end_ms = max(0, self._sent_audio_chunks * 20)
 
         await self._send({
@@ -218,31 +217,12 @@ class RealtimeSession:
             "audio_end_ms": audio_end_ms,
         })
 
-        while not self._audio_queue.empty():
-            try:
-                self._audio_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-
         if self._call:
             await self._call.clear_audio()
 
         self._last_assistant_item = None
         self._response_start_ts = None
         self._sent_audio_chunks = 0
-
-    async def _audio_send_loop(self) -> None:
-        """OpenAI 응답 오디오를 플랫폼으로 전송 (pacing은 플랫폼이 처리)."""
-        try:
-            while True:
-                chunk = await self._audio_queue.get()
-                if chunk is None:
-                    break
-                if self._call:
-                    await self._call.send_audio(chunk)
-                self._sent_audio_chunks += 1
-        except asyncio.CancelledError:
-            pass
 
     async def _send(self, data: dict[str, Any]) -> None:
         if self._ws and not self._ws.closed:
@@ -252,7 +232,6 @@ class RealtimeSession:
                 log.error(f"WebSocket send failed ({data.get('type')}): {e}")
 
     async def stop(self) -> None:
-        self._audio_queue.put_nowait(None)
         for task in self._tasks:
             if not task.done():
                 task.cancel()

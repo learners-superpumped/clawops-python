@@ -1,9 +1,8 @@
-"""CallSession: per-call 상태 관리 및 오디오 스트림."""
+"""CallSession: per-call 상태 관리."""
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
-from typing import Any, AsyncIterator, Callable, Awaitable
+from typing import Any, Callable, Awaitable
 
 
 class CallSession:
@@ -29,7 +28,6 @@ class CallSession:
         self._send_clear_fn: Callable[[], Awaitable[None]] | None = None
         self._hangup_fn: Callable[[], Awaitable[None]] | None = None
 
-        self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
 
     @property
@@ -47,19 +45,6 @@ class CallSession:
     async def hangup(self) -> None:
         if self._hangup_fn:
             await self._hangup_fn()
-
-    async def audio_stream(self) -> AsyncIterator[bytes]:
-        while True:
-            chunk = await self._audio_queue.get()
-            if chunk is None:
-                break
-            yield chunk
-
-    async def _push_audio(self, data: bytes) -> None:
-        await self._audio_queue.put(data)
-
-    def _audio_done(self) -> None:
-        self._audio_queue.put_nowait(None)
 
     def on(self, event: str, handler: Callable[..., Awaitable[None]]) -> None:
         self._event_handlers.setdefault(event, []).append(handler)
