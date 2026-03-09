@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from .calls import AsyncCalls, Calls
 from .messages import AsyncMessages, Messages
 from .numbers import AsyncNumbers, Numbers
+from .webhook_logs import AsyncWebhookLogs, WebhookLogs
 
 if TYPE_CHECKING:
     from .._base_client import AsyncAPIClient, SyncAPIClient
@@ -36,6 +37,10 @@ class AccountContext:
     def numbers(self) -> Numbers:
         return Numbers(client=self._client, account_id=self._account_id)
 
+    @property
+    def webhook_logs(self) -> WebhookLogs:
+        return WebhookLogs(client=self._client, account_id=self._account_id)
+
 
 class AsyncAccountContext:
     """비동기 계정 컨텍스트."""
@@ -55,3 +60,7 @@ class AsyncAccountContext:
     @property
     def numbers(self) -> AsyncNumbers:
         return AsyncNumbers(client=self._client, account_id=self._account_id)
+
+    @property
+    def webhook_logs(self) -> AsyncWebhookLogs:
+        return AsyncWebhookLogs(client=self._client, account_id=self._account_id)

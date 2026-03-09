@@ -11,6 +11,7 @@ from .resources.accounts import AccountContext, AsyncAccountContext
 from .resources.calls import AsyncCalls, Calls
 from .resources.messages import AsyncMessages, Messages
 from .resources.numbers import AsyncNumbers, Numbers
+from .resources.webhook_logs import AsyncWebhookLogs, WebhookLogs
 from .webhooks import Webhooks
 
 
@@ -90,6 +91,11 @@ class ClawOps(SyncAPIClient):
         return Messages(client=self, account_id=self._default_account_id)
 
     @property
+    def webhook_logs(self) -> WebhookLogs:
+        """Webhook 발송 로그 리소스에 접근합니다."""
+        return WebhookLogs(client=self, account_id=self._default_account_id)
+
+    @property
     def webhooks(self) -> Webhooks:
         """Webhook 서명 검증 유틸리티."""
         return Webhooks()
@@ -162,6 +168,11 @@ class AsyncClawOps(AsyncAPIClient):
     @property
     def messages(self) -> AsyncMessages:
         return AsyncMessages(client=self, account_id=self._default_account_id)
+
+    @property
+    def webhook_logs(self) -> AsyncWebhookLogs:
+        """Webhook 발송 로그 리소스에 접근합니다."""
+        return AsyncWebhookLogs(client=self, account_id=self._default_account_id)
 
     @property
     def webhooks(self) -> Webhooks:

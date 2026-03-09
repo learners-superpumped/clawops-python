@@ -5,6 +5,7 @@ from .message_params import MessageCreateParams, MessageListParams
 from .number import NumberListItem, NumberUpdateResponse, PhoneNumber
 from .number_params import NumberCreateParams, NumberUpdateParams
 from .shared import PaginationMeta
+from .webhook_log import WebhookLog
 
 __all__ = [
     "Call",
@@ -21,4 +22,5 @@ __all__ = [
     "NumberUpdateResponse",
     "PaginationMeta",
     "PhoneNumber",
+    "WebhookLog",
 ]
