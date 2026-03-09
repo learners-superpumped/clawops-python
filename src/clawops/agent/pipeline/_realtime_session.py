@@ -18,6 +18,7 @@ from .._audio import pcm16_to_ulaw, ulaw_to_pcm16
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
+from ..tracing._spans import tool_call_span
 
 log = logging.getLogger("clawops.agent")
 
@@ -167,12 +168,16 @@ class RealtimeSession:
                 await self._call.hangup()
             return
 
-        try:
-            args = json.loads(item.get("arguments", "{}"))
-            result = await self._tools.call(func_name, args)
-        except Exception as e:
-            log.error(f"Tool call failed: {func_name}: {e}")
-            result = f"Error: {e}"
+        # Determine source
+        source = "mcp" if func_name in self._tools._mcp_tools else "local"
+
+        with tool_call_span(func_name, source):
+            try:
+                args = json.loads(item.get("arguments", "{}"))
+                result = await self._tools.call(func_name, args)
+            except Exception as e:
+                log.error(f"Tool call failed: {func_name}: {e}")
+                result = f"Error: {e}"
 
         log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
 

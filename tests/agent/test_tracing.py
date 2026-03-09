@@ -372,3 +372,45 @@ class TestMCPCallToolSpanInstrumentation:
 
             assert result == "result"
             mock_span.assert_called_once_with("search")
+
+
+class TestToolCallSpanInstrumentation:
+    @pytest.mark.asyncio
+    async def test_handle_tool_call_uses_span(self):
+        from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
+        from clawops.agent._tool import ToolRegistry
+
+        registry = ToolRegistry()
+
+        async def dummy_tool(city: str) -> str:
+            """Get weather."""
+            return "Sunny"
+
+        registry.register(dummy_tool)
+
+        config = RealtimeConfig(
+            system_prompt="test",
+            openai_api_key="sk-test",
+        )
+        session = RealtimeSession(config, registry)
+
+        mock_call = MagicMock()
+        mock_call.send_audio = AsyncMock()
+        session._call = mock_call
+        session._ws = MagicMock()
+        session._ws.closed = False
+        session._ws.send_str = AsyncMock()
+
+        item = {
+            "name": "dummy_tool",
+            "call_id": "call_abc",
+            "arguments": '{"city": "Seoul"}',
+        }
+
+        with patch("clawops.agent.pipeline._realtime_session.tool_call_span") as mock_span:
+            mock_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
+            mock_span.return_value.__exit__ = MagicMock(return_value=False)
+
+            await session._handle_tool_call(item)
+
+            mock_span.assert_called_once_with("dummy_tool", "local")
