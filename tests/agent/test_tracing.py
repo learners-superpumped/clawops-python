@@ -414,3 +414,44 @@ class TestToolCallSpanInstrumentation:
             await session._handle_tool_call(item)
 
             mock_span.assert_called_once_with("dummy_tool", "local")
+
+
+class TestLLMSessionSpanInstrumentation:
+    @pytest.mark.asyncio
+    async def test_start_creates_llm_session_span(self):
+        from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
+        from clawops.agent._tool import ToolRegistry
+
+        config = RealtimeConfig(
+            system_prompt="test",
+            openai_api_key="sk-test",
+            model="gpt-realtime-mini",
+            voice="marin",
+        )
+        registry = ToolRegistry()
+        session = RealtimeSession(config, registry)
+
+        mock_call = MagicMock()
+
+        with patch("clawops.agent.pipeline._realtime_session.llm_session_span") as mock_span, \
+             patch("aiohttp.ClientSession") as mock_http:
+            mock_span_cm = MagicMock()
+            mock_span_cm.__enter__ = MagicMock(return_value=MagicMock())
+            mock_span_cm.__exit__ = MagicMock(return_value=False)
+            mock_span.return_value = mock_span_cm
+
+            mock_ws = AsyncMock()
+            mock_ws.closed = False
+            mock_ws.send_str = AsyncMock()
+            mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+            mock_http_inst = AsyncMock()
+            mock_http_inst.ws_connect = AsyncMock(return_value=mock_ws)
+            mock_http_inst.close = AsyncMock()
+            mock_http.return_value = mock_http_inst
+
+            await session.start(mock_call)
+
+            mock_span.assert_called_once_with("gpt-realtime-mini", voice="marin")
+
+            # cleanup
+            await session.stop()

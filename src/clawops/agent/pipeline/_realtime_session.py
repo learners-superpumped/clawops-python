@@ -18,7 +18,7 @@ from .._audio import pcm16_to_ulaw, ulaw_to_pcm16
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
-from ..tracing._spans import tool_call_span
+from ..tracing._spans import tool_call_span, llm_session_span
 
 log = logging.getLogger("clawops.agent")
 
@@ -56,9 +56,18 @@ class RealtimeSession:
         self._recorder = recorder
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._tasks: list[asyncio.Task[Any]] = []
+        self._llm_span_ctx: Any | None = None
+        self._llm_span: Any | None = None
 
     async def start(self, call: CallSession) -> None:
         self._call = call
+
+        # Start LLM session span
+        self._llm_span_ctx = llm_session_span(
+            self._config.model, voice=self._config.voice
+        )
+        self._llm_span = self._llm_span_ctx.__enter__()
+
         url = OPENAI_REALTIME_URL.format(model=self._config.model)
 
         self._http = aiohttp.ClientSession()
@@ -254,3 +263,8 @@ class RealtimeSession:
         if self._http:
             await self._http.close()
         self._http = None
+        # Close LLM session span
+        if self._llm_span_ctx:
+            self._llm_span_ctx.__exit__(None, None, None)
+            self._llm_span_ctx = None
+            self._llm_span = None
