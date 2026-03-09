@@ -53,6 +53,7 @@ class RealtimeSession:
         self._last_assistant_item: str | None = None
         self._response_start_ts: int | None = None
         self._latest_media_ts: int = 0
+        self._sent_audio_chunks: int = 0
         self._recorder = recorder
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._tasks: list[asyncio.Task[Any]] = []
@@ -141,6 +142,7 @@ class RealtimeSession:
         if event_type == "response.audio.delta":
             if self._response_start_ts is None:
                 self._response_start_ts = self._latest_media_ts
+                self._sent_audio_chunks = 0
             if event.get("item_id"):
                 self._last_assistant_item = event["item_id"]
 
@@ -205,8 +207,8 @@ class RealtimeSession:
         if not self._last_assistant_item or self._response_start_ts is None:
             return
 
-        elapsed = self._latest_media_ts - self._response_start_ts
-        audio_end_ms = max(0, elapsed)
+        # 실제 송신한 오디오 양 기반으로 계산 (320B = 20ms per chunk)
+        audio_end_ms = max(0, self._sent_audio_chunks * 20)
 
         await self._send({
             "type": "conversation.item.truncate",
@@ -226,6 +228,7 @@ class RealtimeSession:
 
         self._last_assistant_item = None
         self._response_start_ts = None
+        self._sent_audio_chunks = 0
 
     async def _audio_send_loop(self) -> None:
         """OpenAI 응답 오디오를 플랫폼으로 전송 (pacing은 플랫폼이 처리)."""
@@ -236,6 +239,7 @@ class RealtimeSession:
                     break
                 if self._call:
                     await self._call.send_audio(chunk)
+                self._sent_audio_chunks += 1
                 if self._recorder:
                     self._recorder.write_outbound(chunk)
         except asyncio.CancelledError:
