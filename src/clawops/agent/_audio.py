@@ -101,7 +101,7 @@ def ulaw_to_pcm16(ulaw: bytes) -> bytes:
     return struct.pack(f"<{len(samples)}h", *samples)
 
 
-# ─── Resample: 8kHz <-> 24kHz (선형 보간) ──────────────────────────────
+# ─── Resample: 8kHz <-> 24kHz ──────────────────────────────────────────
 
 def resample_8k_to_24k(pcm16_8k: bytes) -> bytes:
     """8kHz PCM16를 24kHz PCM16로 업샘플링 (선형 보간)."""
@@ -121,11 +121,27 @@ def resample_8k_to_24k(pcm16_8k: bytes) -> bytes:
     return struct.pack(f"<{len(out)}h", *out)
 
 
+# 24kHz→8kHz 안티앨리어싱 FIR 로우패스 필터 (cutoff ≈ 3.5kHz)
+# 15-tap windowed sinc (Hamming), 정수 계수 (합=256, 8-bit 정밀도)
+_LP_KERNEL = (1, 2, 5, 12, 23, 36, 44, 50, 44, 36, 23, 12, 5, 2, 1)
+_LP_KERNEL_SUM = sum(_LP_KERNEL)  # 296
+_LP_HALF = len(_LP_KERNEL) // 2   # 7
+
+
 def resample_24k_to_8k(pcm16_24k: bytes) -> bytes:
-    """24kHz PCM16를 8kHz PCM16로 다운샘플링 (3:1 데시메이션)."""
+    """24kHz PCM16를 8kHz PCM16로 다운샘플링 (FIR 안티앨리어싱 + 3:1 데시메이션)."""
     if not pcm16_24k:
         return b""
     n = len(pcm16_24k) // 2
     samples = struct.unpack(f"<{n}h", pcm16_24k)
-    out = [samples[i] for i in range(0, n, 3)]
+    out = []
+    for i in range(0, n, 3):
+        acc = 0
+        for k, c in enumerate(_LP_KERNEL):
+            j = i + k - _LP_HALF
+            if 0 <= j < n:
+                acc += samples[j] * c
+            # 경계 밖은 0으로 처리 (자연 감쇠)
+        s = acc // _LP_KERNEL_SUM
+        out.append(max(-32768, min(32767, s)))
     return struct.pack(f"<{len(out)}h", *out)

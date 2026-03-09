@@ -14,7 +14,7 @@ from typing import Any
 
 import aiohttp
 
-from .._audio import resample_8k_to_24k, resample_24k_to_8k
+from .._audio import resample_8k_to_24k, ulaw_to_pcm16
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -90,7 +90,7 @@ class RealtimeSession:
                 "voice": self._config.voice,
                 "instructions": self._config.system_prompt,
                 "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
+                "output_audio_format": "g711_ulaw",
                 "input_audio_transcription": {
                     "model": "gpt-4o-mini-transcribe",
                     "language": self._config.language,
@@ -146,11 +146,11 @@ class RealtimeSession:
             if event.get("item_id"):
                 self._last_assistant_item = event["item_id"]
 
-            pcm16_24k = base64.b64decode(event["delta"])
-            pcm16_8k = resample_24k_to_8k(pcm16_24k)
+            ulaw = base64.b64decode(event["delta"])
+            pcm16 = ulaw_to_pcm16(ulaw)
             chunk_size = 320  # 320B = 20ms at 8kHz 16-bit
-            for off in range(0, len(pcm16_8k), chunk_size):
-                self._audio_queue.put_nowait(pcm16_8k[off : off + chunk_size])
+            for off in range(0, len(pcm16), chunk_size):
+                self._audio_queue.put_nowait(pcm16[off : off + chunk_size])
 
         elif event_type == "input_audio_buffer.speech_started":
             await self._handle_truncation()
