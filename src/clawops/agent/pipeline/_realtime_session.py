@@ -14,7 +14,7 @@ from typing import Any
 
 import aiohttp
 
-from .._audio import resample_8k_to_24k, ulaw_to_pcm16
+from .._audio import pcm16_to_ulaw, ulaw_to_pcm16
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -89,7 +89,7 @@ class RealtimeSession:
                 "modalities": ["text", "audio"],
                 "voice": self._config.voice,
                 "instructions": self._config.system_prompt,
-                "input_audio_format": "pcm16",
+                "input_audio_format": "g711_ulaw",
                 "output_audio_format": "g711_ulaw",
                 "input_audio_transcription": {
                     "model": "gpt-4o-mini-transcribe",
@@ -113,10 +113,10 @@ class RealtimeSession:
 
     async def feed_audio(self, pcm16: bytes, timestamp: int) -> None:
         self._latest_media_ts = timestamp
-        pcm16_24k = resample_8k_to_24k(pcm16)
+        ulaw = pcm16_to_ulaw(pcm16)
         await self._send({
             "type": "input_audio_buffer.append",
-            "audio": base64.b64encode(pcm16_24k).decode(),
+            "audio": base64.b64encode(ulaw).decode(),
         })
 
     async def _receive_loop(self) -> None:
