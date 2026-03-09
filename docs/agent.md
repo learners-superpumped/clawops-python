@@ -529,10 +529,14 @@ ClawOpsAgent
 │   ├── call.incoming       # 인바운드 콜 알림 수신
 │   └── call.ended          # 콜 종료 알림 수신
 │
-├── MediaWebSocket (콜별)   # 오디오 스트리밍
+├── MediaWebSocket (콜별)   # 오디오 스트리밍 (VoiceML Stream Protocol)
 │   ├── start               # 미디어 스트림 시작
 │   ├── media               # PCM16 8kHz base64 오디오
+│   ├── mark                # 재생 완료 추적
+│   ├── clear               # 버퍼 flush (barge-in)
 │   └── stop                # 미디어 스트림 종료
+│   NOTE: pacing/jitter는 플랫폼이 처리 — SDK에서 구현 불필요
+│         상세: docs/voiceml-stream-protocol.md
 │
 ├── RealtimeSession (콜별)  # OpenAI Realtime API
 │   ├── session.update      # 세션 설정 (음성, 도구 등)
