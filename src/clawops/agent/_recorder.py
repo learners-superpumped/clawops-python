@@ -76,6 +76,7 @@ class AudioRecorder:
         self._in_file = None
         self._out_file = None
         self._mix_file = None
+        self._raw_file = None
         self._in_size = 0
         self._out_size = 0
         self._mix_size = 0
@@ -89,6 +90,7 @@ class AudioRecorder:
         self._in_file = open(f"{base}_in.wav", "wb")
         self._out_file = open(f"{base}_out.wav", "wb")
         self._mix_file = open(f"{base}_mix.wav", "wb")
+        self._raw_file = open(f"{base}_raw.ulaw", "wb")
 
         # placeholder 헤더 (나중에 업데이트)
         for f in (self._in_file, self._out_file, self._mix_file):
@@ -124,6 +126,12 @@ class AudioRecorder:
         # 믹스용 버퍼에 추가
         self._out_buffer.extend(pcm16)
 
+    def write_raw_outbound(self, data: bytes) -> None:
+        """OpenAI 원본 ulaw 바이트를 그대로 기록."""
+        if not self._started or not self._raw_file:
+            return
+        self._raw_file.write(data)
+
     def stop(self) -> None:
         """녹음 종료. WAV 헤더를 최종 크기로 업데이트."""
         if not self._started:
@@ -136,6 +144,10 @@ class AudioRecorder:
             self._mix_file.write(remaining)
             self._mix_size += len(remaining)
             self._out_buffer.clear()
+
+        # raw ulaw 파일 닫기
+        if self._raw_file and not self._raw_file.closed:
+            self._raw_file.close()
 
         # WAV 헤더 업데이트
         for f, size in [

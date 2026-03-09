@@ -147,6 +147,8 @@ class RealtimeSession:
                 self._last_assistant_item = event["item_id"]
 
             ulaw = base64.b64decode(event["delta"])
+            if self._recorder:
+                self._recorder.write_raw_outbound(ulaw)
             pcm16 = ulaw_to_pcm16(ulaw)
             chunk_size = 320  # 320B = 20ms at 8kHz 16-bit
             for off in range(0, len(pcm16), chunk_size):
