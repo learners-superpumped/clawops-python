@@ -57,6 +57,7 @@ class RealtimeSession:
         self._tasks: list[asyncio.Task[Any]] = []
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
+        self._audio_remainder: bytes = b""  # 160B 미만 잔여 오디오 버퍼
 
     async def start(self, call: CallSession) -> None:
         self._call = call
@@ -161,11 +162,22 @@ class RealtimeSession:
                 self._diag_last_delta_time = now
             if self._recorder:
                 self._recorder.write_raw_outbound(ulaw)
-            # ulaw 직통 전송 — 중간 큐 없이 바로 플랫폼으로
+            # 잔여 바이트와 합쳐서 항상 160B(20ms) 정렬된 프레임만 전송
+            ulaw = self._audio_remainder + ulaw
             chunk_size = 160  # 160B = 20ms at 8kHz ulaw
-            for off in range(0, len(ulaw), chunk_size):
+            full_end = (len(ulaw) // chunk_size) * chunk_size
+            for off in range(0, full_end, chunk_size):
                 await self._call.send_audio(ulaw[off : off + chunk_size])
                 self._sent_audio_chunks += 1
+            self._audio_remainder = ulaw[full_end:]
+
+        elif event_type == "response.audio.done":
+            # 응답 오디오 종료 — 잔여 바이트를 silence 패딩하여 flush
+            if self._audio_remainder:
+                padded = self._audio_remainder + b'\xff' * (160 - len(self._audio_remainder))
+                await self._call.send_audio(padded)
+                self._sent_audio_chunks += 1
+                self._audio_remainder = b""
 
         elif event_type == "input_audio_buffer.speech_started":
             await self._handle_truncation()
@@ -238,6 +250,7 @@ class RealtimeSession:
         self._last_assistant_item = None
         self._response_start_ts = None
         self._sent_audio_chunks = 0
+        self._audio_remainder = b""
 
     async def _send(self, data: dict[str, Any]) -> None:
         if self._ws and not self._ws.closed:
