@@ -174,3 +174,17 @@ class TestSpansWithMockTracer:
         assert kwargs["attributes"]["gen_ai.system"] == "openai"
         assert kwargs["attributes"]["gen_ai.request.model"] == "gpt-realtime-mini"
         assert kwargs["attributes"]["gen_ai.request.voice"] == "marin"
+
+
+class TestTracingExtra:
+    def test_tracing_extra_in_pyproject(self):
+        import tomllib
+        from pathlib import Path
+
+        pyproject = Path(__file__).parents[2] / "pyproject.toml"
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        extras = data["project"]["optional-dependencies"]
+        assert "tracing" in extras
+        deps = extras["tracing"]
+        assert any("opentelemetry-api" in d for d in deps)
