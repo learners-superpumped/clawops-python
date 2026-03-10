@@ -144,6 +144,90 @@ llm = OllamaLLM(
 - 스트리밍 텍스트 생성
 - Tool call 지원 (모델이 지원하는 경우)
 
+### MistralLLM
+
+Mistral AI 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import MistralLLM
+
+llm = MistralLLM(model="mistral-small-latest")
+```
+
+환경변수: `MISTRAL_API_KEY`
+
+### GroqLLM
+
+Groq 초저지연 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import GroqLLM
+
+llm = GroqLLM(model="meta-llama/llama-4-scout-17b-16e-instruct")
+```
+
+환경변수: `GROQ_API_KEY`
+
+### PerplexityLLM
+
+Perplexity 웹 검색 기반 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import PerplexityLLM
+
+llm = PerplexityLLM(model="sonar")
+```
+
+환경변수: `PERPLEXITY_API_KEY`
+
+### TogetherLLM
+
+Together AI 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import TogetherLLM
+
+llm = TogetherLLM(model="meta-llama/Llama-4-Scout-17B-16E-Instruct")
+```
+
+환경변수: `TOGETHER_API_KEY`
+
+### FireworksLLM
+
+Fireworks AI 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import FireworksLLM
+
+llm = FireworksLLM(model="accounts/fireworks/models/llama4-scout-instruct-basic")
+```
+
+환경변수: `FIREWORKS_API_KEY`
+
+### DeepSeekLLM
+
+DeepSeek 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import DeepSeekLLM
+
+llm = DeepSeekLLM(model="deepseek-chat")
+```
+
+환경변수: `DEEPSEEK_API_KEY`
+
+### XaiLLM
+
+xAI Grok 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import XaiLLM
+
+llm = XaiLLM(model="grok-4-1-fast")
+```
+
+환경변수: `XAI_API_KEY`
+
 ### ElevenLabsTTS
 
 ElevenLabs WebSocket 스트리밍 음성 합성.

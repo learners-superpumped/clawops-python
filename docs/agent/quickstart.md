@@ -27,6 +27,13 @@ export CLAWOPS_ACCOUNT_ID="AC..."
 export OPENAI_API_KEY="sk-..."           # OpenAI Realtime / OpenAILLM
 export ANTHROPIC_API_KEY="..."           # AnthropicLLM
 export GOOGLE_API_KEY="..."              # Gemini Realtime / GeminiLLM
+export MISTRAL_API_KEY="..."             # MistralLLM
+export GROQ_API_KEY="..."               # GroqLLM
+export PERPLEXITY_API_KEY="..."          # PerplexityLLM
+export TOGETHER_API_KEY="..."            # TogetherLLM
+export FIREWORKS_API_KEY="..."           # FireworksLLM
+export DEEPSEEK_API_KEY="..."            # DeepSeekLLM
+export XAI_API_KEY="..."                 # XaiLLM
 export DEEPGRAM_API_KEY="..."            # Pipeline: DeepgramSTT
 export ELEVENLABS_API_KEY="..."          # Pipeline: ElevenLabsTTS
 ```
