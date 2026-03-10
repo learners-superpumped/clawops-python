@@ -11,12 +11,14 @@ class PhoneNumber(BaseModel):
 
     Attributes:
         number: 전화번호.
+        source: 번호 소스.
         webhook_url: Webhook URL. 미설정 시 None.
         webhook_method: Webhook HTTP 메서드.
         created_at: 등록 시각.
     """
 
     number: str
+    source: Optional[str] = None
     webhook_url: Optional[str] = None
     webhook_method: Optional[Literal["POST", "GET"]] = None
     created_at: Optional[datetime] = None
