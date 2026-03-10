@@ -2,7 +2,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Literal, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Literal, Protocol, TYPE_CHECKING, runtime_checkable
+
+if TYPE_CHECKING:
+    from .._session import CallSession
+
+
+# ── Session Protocol ─────────────────────────────────────────
+
+@runtime_checkable
+class Session(Protocol):
+    """Realtime 또는 Pipeline 세션의 공통 인터페이스.
+
+    ClawOpsAgent는 이 Protocol을 구현하는 객체를 받아 통화를 처리한다.
+    """
+
+    async def start(self, call: CallSession) -> None:
+        """세션 시작 (WS 연결, 인사말 등)."""
+        ...
+
+    async def feed_audio(self, audio: bytes, timestamp: int) -> None:
+        """인바운드 오디오(G.711 ulaw) 전달."""
+        ...
+
+    async def stop(self) -> None:
+        """세션 종료 및 리소스 정리."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

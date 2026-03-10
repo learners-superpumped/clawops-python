@@ -1,12 +1,13 @@
 """ClawOpsAgent: 메인 진입점.
 
-Control WS 연결, per-call Media WS 생성, RealtimeSession 관리를 조합한다.
+Control WS 연결, per-call Media WS 생성, Session 관리를 조합한다.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
+import signal
 from typing import Any, Callable, Awaitable
 
 from .._exceptions import AgentError
@@ -16,8 +17,7 @@ from ._media_ws import MediaWebSocket
 from ._session import CallSession
 from ._recorder import AudioRecorder
 from ._tool import ToolRegistry
-from .pipeline._base import STT, LLM, TTS
-from .pipeline._realtime_session import RealtimeConfig, RealtimeSession
+from .pipeline._base import Session
 from .tracing import TracingConfig
 from .tracing._spans import call_span, mcp_connect_span, setup_tracing
 
@@ -32,16 +32,7 @@ class ClawOpsAgent:
         account_id: str | None = None,
         base_url: str | None = None,
         from_: str,
-        system_prompt: str = "",
-        voice: str = "marin",
-        model: str = "gpt-realtime-mini",
-        openai_api_key: str | None = None,
-        language: str = "ko",
-        eagerness: str = "high",
-        greeting: bool = True,
-        stt: STT | None = None,
-        llm: LLM | None = None,
-        tts: TTS | None = None,
+        session: Session,
         mcp_servers: list[Any] | None = None,
         recording: bool = False,
         recording_path: str = "./recordings",
@@ -57,9 +48,6 @@ class ClawOpsAgent:
         if account_id is None:
             raise AgentError("account_id를 지정하거나 CLAWOPS_ACCOUNT_ID 환경변수를 설정하세요.")
 
-        if openai_api_key is None:
-            openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-
         if base_url is None:
             base_url = os.environ.get("CLAWOPS_BASE_URL", "https://api.claw-ops.com")
 
@@ -68,19 +56,7 @@ class ClawOpsAgent:
         self._base_url = base_url
         self._from_number = from_
 
-        self._config = RealtimeConfig(
-            system_prompt=system_prompt,
-            openai_api_key=openai_api_key,
-            voice=voice,
-            model=model,
-            language=language,
-            eagerness=eagerness,
-            greeting=greeting,
-        )
-
-        self._stt = stt
-        self._llm = llm
-        self._tts = tts
+        self._session = session
         self._mcp_servers = mcp_servers or []
         self._recording = recording
         self._recording_path = recording_path
@@ -104,12 +80,28 @@ class ClawOpsAgent:
             return fn
         return decorator
 
-    async def start(self) -> None:
-        """비블로킹 — Control WS 연결 + 수신 대기 시작."""
+    async def start(self, *, block: bool = True) -> None:
+        """Control WS 연결 + 수신 대기 시작.
+
+        Args:
+            block: True이면 SIGINT/SIGTERM까지 대기 후 자동으로 stop()을 호출한다.
+        """
         if self._control_ws is not None:
             return
         await self._ensure_control_ws()
         log.info(f"ClawOpsAgent started on {self._from_number}")
+
+        if block:
+            stop_event = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(sig, stop_event.set)
+            try:
+                await stop_event.wait()
+            finally:
+                for sig in (signal.SIGINT, signal.SIGTERM):
+                    loop.remove_signal_handler(sig)
+                await self.stop()
 
     async def stop(self) -> None:
         """Control WS 닫기 + 활성 세션 정리."""
@@ -229,20 +221,9 @@ class ClawOpsAgent:
                         mcp_clients.append(client)
                 call_tools.register_mcp_tools(mcp_clients)
 
-            if self._stt and self._llm and self._tts:
-                from .pipeline._pipeline_session import PipelineSession
-                session = PipelineSession(
-                    stt=self._stt,
-                    llm=self._llm,
-                    tts=self._tts,
-                    system_prompt=self._config.system_prompt,
-                    tool_registry=call_tools,
-                    greeting=self._config.greeting,
-                    language=self._config.language,
-                    recorder=recorder,
-                )
-            else:
-                session = RealtimeSession(self._config, call_tools, recorder=recorder)
+            session = self._session
+            if hasattr(session, "set_tool_registry"):
+                session.set_tool_registry(call_tools)
 
             async def on_audio(ulaw: bytes, ts: int) -> None:
                 await session.feed_audio(ulaw, ts)
@@ -281,7 +262,7 @@ class ClawOpsAgent:
     async def _on_media_start(self, call: CallSession, info: dict[str, Any]) -> None:
         log.info(f"Media stream started: {call.call_id}")
 
-    async def _on_media_stop(self, call: CallSession, session: RealtimeSession) -> None:
+    async def _on_media_stop(self, call: CallSession, session: Session) -> None:
         log.info(f"Media stream stopped: {call.call_id}")
         await session.stop()
 

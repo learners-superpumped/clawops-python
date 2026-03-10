@@ -47,17 +47,17 @@ class PipelineSession:
         stt: STT,
         llm: LLM,
         tts: TTS,
-        system_prompt: str,
-        tool_registry: ToolRegistry,
+        system_prompt: str = "",
         greeting: bool = True,
         language: str = "ko",
+        tool_registry: ToolRegistry | None = None,
         recorder: AudioRecorder | None = None,
     ) -> None:
         self._stt = stt
         self._llm = llm
         self._tts = tts
         self._system_prompt = system_prompt
-        self._tools = tool_registry
+        self._tools = tool_registry or ToolRegistry()
         self._greeting = greeting
         self._language = language
         self._recorder = recorder
@@ -70,6 +70,10 @@ class PipelineSession:
         self._current_response_task: asyncio.Task[Any] | None = None
         self._sent_audio_chunks = 0
         self._pending_respond_task: asyncio.Task[Any] | None = None
+
+    def set_tool_registry(self, registry: ToolRegistry) -> None:
+        """콜별로 fork된 ToolRegistry를 주입한다."""
+        self._tools = registry
 
     async def start(self, call: CallSession) -> None:
         self._call = call

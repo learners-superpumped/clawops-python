@@ -3,6 +3,11 @@ import pytest
 from clawops.agent import ClawOpsAgent
 from clawops.agent._session import CallSession
 from clawops.agent._tool import ToolRegistry
+from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+
+
+def _make_session(**kwargs):
+    return OpenAIRealtime(api_key="sk-openai-test", **kwargs)
 
 
 def test_full_agent_setup():
@@ -10,10 +15,11 @@ def test_full_agent_setup():
         api_key="sk_test",
         account_id="AC_test",
         from_="07012341234",
-        system_prompt="테스트 상담원입니다.",
-        openai_api_key="sk-openai-test",
-        voice="nova",
-        language="ko",
+        session=_make_session(
+            system_prompt="테스트 상담원입니다.",
+            voice="nova",
+            language="ko",
+        ),
     )
 
     @agent.tool
@@ -36,7 +42,7 @@ def test_full_agent_setup():
     assert any(t["name"] == "get_info" for t in schemas)
     assert "call_start" in agent._event_handlers
     assert "call_end" in agent._event_handlers
-    assert agent._config.voice == "nova"
+    assert agent._session._config.voice == "nova"
 
 
 @pytest.mark.asyncio
@@ -85,8 +91,7 @@ def test_agent_with_mcp_servers():
         api_key="sk_test",
         account_id="AC_test",
         from_="07012341234",
-        system_prompt="테스트",
-        openai_api_key="sk-openai-test",
+        session=_make_session(system_prompt="테스트"),
         mcp_servers=[
             MCPServerStdio("npx", args=["@mcp/server"]),
             MCPServerHTTP("https://mcp.example.com"),
@@ -96,14 +101,16 @@ def test_agent_with_mcp_servers():
 
 
 def test_all_imports():
-    from clawops.agent import ClawOpsAgent
+    from clawops.agent import ClawOpsAgent, OpenAIRealtime, GeminiRealtime, Session
     from clawops.agent._tool import ToolRegistry
     from clawops.agent._session import CallSession
     from clawops.agent._audio import pcm16_to_ulaw, ulaw_to_pcm16
     from clawops.agent._control_ws import ControlWebSocket
     from clawops.agent._media_ws import MediaWebSocket
     from clawops.agent.pipeline import STT, LLM, TTS
-    from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
+    from clawops.agent.pipeline._openai_realtime import OpenAIRealtime, OpenAIRealtimeConfig
+    from clawops.agent.pipeline._gemini_realtime import GeminiRealtime
     from clawops.agent.mcp import MCPServerHTTP, MCPServerStdio, MCPClient
-    from clawops.agent.plugins.openai_realtime import OpenAIRealtimePlugin
+    # Legacy imports
+    from clawops.agent.plugins.openai_realtime import RealtimeSession, RealtimeConfig
     # All imports successful

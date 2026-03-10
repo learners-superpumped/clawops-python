@@ -86,13 +86,14 @@ def mcp_connect_span(
 def llm_session_span(
     model: str,
     *,
+    system: str = "openai",
     voice: str = "",
 ) -> Generator[Any, None, None]:
     if not _enabled or _tracer is None:
         yield None
         return
     attributes: dict[str, Any] = {
-        attr.GEN_AI_SYSTEM: "openai",
+        attr.GEN_AI_SYSTEM: system,
         attr.GEN_AI_REQUEST_MODEL: model,
     }
     if voice:

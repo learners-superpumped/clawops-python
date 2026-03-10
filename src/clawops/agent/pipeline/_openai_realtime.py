@@ -1,7 +1,6 @@
-"""OpenAI Realtime API 세션 관리.
+"""OpenAI Realtime API 세션.
 
-../ai-agent/session_manager.py의 핵심 로직을 SDK 구조로 포팅.
-CallSession당 하나의 RealtimeSession이 생성된다.
+Session Protocol을 구현하며, OpenAI Realtime WebSocket API를 사용한다.
 """
 from __future__ import annotations
 
@@ -9,6 +8,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,7 +32,9 @@ HANG_UP_TOOL = {
 
 
 @dataclass
-class RealtimeConfig:
+class OpenAIRealtimeConfig:
+    """OpenAIRealtime 내부 설정. 하위 호환용으로 유지."""
+
     system_prompt: str
     openai_api_key: str
     voice: str = "marin"
@@ -42,10 +44,38 @@ class RealtimeConfig:
     greeting: bool = True
 
 
-class RealtimeSession:
-    def __init__(self, config: RealtimeConfig, tool_registry: ToolRegistry, *, recorder: AudioRecorder | None = None) -> None:
-        self._config = config
-        self._tools = tool_registry
+class OpenAIRealtime:
+    """OpenAI Realtime API 기반 음성 세션.
+
+    Session Protocol을 구현한다. ``gpt-realtime-mini``, ``gpt-4o-mini-realtime``
+    등 OpenAI의 realtime 모델을 사용한다.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        system_prompt: str = "",
+        model: str = "gpt-realtime-mini",
+        voice: str = "marin",
+        language: str = "ko",
+        eagerness: str = "high",
+        greeting: bool = True,
+        tool_registry: ToolRegistry | None = None,
+        recorder: AudioRecorder | None = None,
+    ) -> None:
+        if api_key is None:
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+        self._config = OpenAIRealtimeConfig(
+            system_prompt=system_prompt,
+            openai_api_key=api_key,
+            voice=voice,
+            model=model,
+            language=language,
+            eagerness=eagerness,
+            greeting=greeting,
+        )
+        self._tools = tool_registry or ToolRegistry()
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._http: aiohttp.ClientSession | None = None
         self._call: CallSession | None = None
@@ -58,6 +88,10 @@ class RealtimeSession:
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
         self._audio_remainder: bytes = b""  # 160B 미만 잔여 오디오 버퍼
+
+    def set_tool_registry(self, registry: ToolRegistry) -> None:
+        """콜별로 fork된 ToolRegistry를 주입한다."""
+        self._tools = registry
 
     async def start(self, call: CallSession) -> None:
         self._call = call

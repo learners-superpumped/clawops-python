@@ -2,5 +2,15 @@
 
 from ._agent import ClawOpsAgent
 from ._tool import ToolRegistry, function_tool
+from .pipeline._base import Session
+from .pipeline._openai_realtime import OpenAIRealtime
+from .pipeline._gemini_realtime import GeminiRealtime
 
-__all__ = ["ClawOpsAgent", "ToolRegistry", "function_tool"]
+__all__ = [
+    "ClawOpsAgent",
+    "ToolRegistry",
+    "function_tool",
+    "Session",
+    "OpenAIRealtime",
+    "GeminiRealtime",
+]

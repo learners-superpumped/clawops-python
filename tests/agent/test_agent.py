@@ -1,6 +1,11 @@
 # tests/agent/test_agent.py
 import pytest
 from clawops.agent import ClawOpsAgent
+from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+
+
+def _make_session(**kwargs):
+    return OpenAIRealtime(api_key="sk-openai-test", **kwargs)
 
 
 def test_agent_creation():
@@ -8,11 +13,10 @@ def test_agent_creation():
         api_key="sk_test",
         account_id="AC_test",
         from_="07012341234",
-        system_prompt="test prompt",
-        openai_api_key="sk-openai-test",
+        session=_make_session(system_prompt="test prompt"),
     )
     assert agent._from_number == "07012341234"
-    assert agent._config.system_prompt == "test prompt"
+    assert agent._session._config.system_prompt == "test prompt"
 
 
 def test_agent_tool_decorator():
@@ -20,8 +24,7 @@ def test_agent_tool_decorator():
         api_key="sk_test",
         account_id="AC_test",
         from_="07012341234",
-        system_prompt="test",
-        openai_api_key="sk-openai-test",
+        session=_make_session(),
     )
 
     @agent.tool
@@ -40,8 +43,7 @@ def test_agent_event_decorator():
         api_key="sk_test",
         account_id="AC_test",
         from_="07012341234",
-        system_prompt="test",
-        openai_api_key="sk-openai-test",
+        session=_make_session(),
     )
 
     @agent.on("call_start")
@@ -54,15 +56,13 @@ def test_agent_event_decorator():
 def test_agent_from_env(monkeypatch):
     monkeypatch.setenv("CLAWOPS_API_KEY", "sk_env")
     monkeypatch.setenv("CLAWOPS_ACCOUNT_ID", "AC_env")
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-env")
 
     agent = ClawOpsAgent(
         from_="07012341234",
-        system_prompt="test",
+        session=_make_session(),
     )
     assert agent._api_key == "sk_env"
     assert agent._account_id == "AC_env"
-    assert agent._config.openai_api_key == "sk-openai-env"
 
 
 def test_agent_missing_api_key():
@@ -70,6 +70,14 @@ def test_agent_missing_api_key():
     with pytest.raises(AgentError, match="api_key"):
         ClawOpsAgent(
             from_="07012341234",
-            system_prompt="test",
-            openai_api_key="sk-test",
+            session=_make_session(),
+        )
+
+
+def test_agent_missing_session():
+    with pytest.raises(TypeError, match="session"):
+        ClawOpsAgent(
+            api_key="sk_test",
+            account_id="AC_test",
+            from_="07012341234",
         )

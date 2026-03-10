@@ -196,6 +196,11 @@ class TestTracingExtra:
         assert any("opentelemetry-api" in d for d in deps)
 
 
+def _make_session():
+    from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+    return OpenAIRealtime(api_key="sk-test")
+
+
 class TestAgentTracingParam:
     def test_agent_accepts_tracing_config(self):
         from clawops.agent import ClawOpsAgent
@@ -205,6 +210,7 @@ class TestAgentTracingParam:
             api_key="test",
             account_id="acc",
             from_="+821000000000",
+            session=_make_session(),
             tracing=TracingConfig(),
         )
         assert agent._tracing is not None
@@ -217,6 +223,7 @@ class TestAgentTracingParam:
             api_key="test",
             account_id="acc",
             from_="+821000000000",
+            session=_make_session(),
         )
         assert agent._tracing is None
 
@@ -228,10 +235,17 @@ class TestCallSpanInstrumentation:
         from clawops.agent._agent import ClawOpsAgent
         from clawops.agent.tracing import TracingConfig
 
+        mock_session = AsyncMock()
+        mock_session.start = AsyncMock()
+        mock_session.stop = AsyncMock()
+        mock_session.feed_audio = AsyncMock()
+        mock_session.set_tool_registry = MagicMock()
+
         agent = ClawOpsAgent(
             api_key="test",
             account_id="acc",
             from_="+821000000000",
+            session=mock_session,
             tracing=TracingConfig(),
         )
 
@@ -245,16 +259,13 @@ class TestCallSpanInstrumentation:
         mock_call._hangup_fn = None
 
         with patch("clawops.agent._agent.call_span") as mock_span, \
-             patch("clawops.agent._agent.MediaWebSocket") as mock_mws, \
-             patch("clawops.agent._agent.RealtimeSession") as mock_rt:
+             patch("clawops.agent._agent.MediaWebSocket") as mock_mws:
             mock_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_span.return_value.__exit__ = MagicMock(return_value=False)
             mock_mws.return_value.connect = AsyncMock()
             mock_mws.return_value.send_audio = AsyncMock()
             mock_mws.return_value.send_clear = AsyncMock()
             mock_mws.return_value.close = AsyncMock()
-            mock_rt.return_value.start = AsyncMock()
-            mock_rt.return_value.stop = AsyncMock()
 
             await agent._start_call_session(mock_call, "wss://media")
 
@@ -269,10 +280,17 @@ class TestCallSpanInstrumentation:
         """tracing 미설정 시에도 call_span은 항상 호출되지만 no-op으로 동작."""
         from clawops.agent._agent import ClawOpsAgent
 
+        mock_session = AsyncMock()
+        mock_session.start = AsyncMock()
+        mock_session.stop = AsyncMock()
+        mock_session.feed_audio = AsyncMock()
+        mock_session.set_tool_registry = MagicMock()
+
         agent = ClawOpsAgent(
             api_key="test",
             account_id="acc",
             from_="+821000000000",
+            session=mock_session,
         )
 
         mock_call = MagicMock()
@@ -285,16 +303,13 @@ class TestCallSpanInstrumentation:
         mock_call._hangup_fn = None
 
         with patch("clawops.agent._agent.call_span") as mock_span, \
-             patch("clawops.agent._agent.MediaWebSocket") as mock_mws, \
-             patch("clawops.agent._agent.RealtimeSession") as mock_rt:
+             patch("clawops.agent._agent.MediaWebSocket") as mock_mws:
             mock_span.return_value.__enter__ = MagicMock(return_value=None)
             mock_span.return_value.__exit__ = MagicMock(return_value=False)
             mock_mws.return_value.connect = AsyncMock()
             mock_mws.return_value.send_audio = AsyncMock()
             mock_mws.return_value.send_clear = AsyncMock()
             mock_mws.return_value.close = AsyncMock()
-            mock_rt.return_value.start = AsyncMock()
-            mock_rt.return_value.stop = AsyncMock()
 
             await agent._start_call_session(mock_call, "wss://media")
 
@@ -309,10 +324,17 @@ class TestMCPConnectSpanInstrumentation:
         from clawops.agent.tracing import TracingConfig
         from clawops.agent.mcp import MCPServerStdio
 
+        mock_session = AsyncMock()
+        mock_session.start = AsyncMock()
+        mock_session.stop = AsyncMock()
+        mock_session.feed_audio = AsyncMock()
+        mock_session.set_tool_registry = MagicMock()
+
         agent = ClawOpsAgent(
             api_key="test",
             account_id="acc",
             from_="+821000000000",
+            session=mock_session,
             tracing=TracingConfig(),
             mcp_servers=[MCPServerStdio("npx", args=["@mcp/test"])],
         )
@@ -329,8 +351,7 @@ class TestMCPConnectSpanInstrumentation:
         with patch("clawops.agent._agent.call_span") as mock_cs, \
              patch("clawops.agent._agent.mcp_connect_span") as mock_mcs, \
              patch("clawops.agent._agent.MCPClient") as mock_mcp, \
-             patch("clawops.agent._agent.MediaWebSocket") as mock_mws, \
-             patch("clawops.agent._agent.RealtimeSession") as mock_rt:
+             patch("clawops.agent._agent.MediaWebSocket") as mock_mws:
             mock_cs.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_cs.return_value.__exit__ = MagicMock(return_value=False)
             mock_mcs.return_value.__enter__ = MagicMock(return_value=MagicMock())
@@ -344,8 +365,6 @@ class TestMCPConnectSpanInstrumentation:
             mock_mws.return_value.send_audio = AsyncMock()
             mock_mws.return_value.send_clear = AsyncMock()
             mock_mws.return_value.close = AsyncMock()
-            mock_rt.return_value.start = AsyncMock()
-            mock_rt.return_value.stop = AsyncMock()
 
             await agent._start_call_session(mock_call, "wss://media")
 
@@ -384,7 +403,7 @@ class TestMCPCallToolSpanInstrumentation:
 class TestToolCallSpanInstrumentation:
     @pytest.mark.asyncio
     async def test_handle_tool_call_uses_span(self):
-        from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
+        from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
         from clawops.agent._tool import ToolRegistry
 
         registry = ToolRegistry()
@@ -395,11 +414,11 @@ class TestToolCallSpanInstrumentation:
 
         registry.register(dummy_tool)
 
-        config = RealtimeConfig(
+        session = OpenAIRealtime(
+            api_key="sk-test",
             system_prompt="test",
-            openai_api_key="sk-test",
+            tool_registry=registry,
         )
-        session = RealtimeSession(config, registry)
 
         mock_call = MagicMock()
         mock_call.send_audio = AsyncMock()
@@ -414,7 +433,7 @@ class TestToolCallSpanInstrumentation:
             "arguments": '{"city": "Seoul"}',
         }
 
-        with patch("clawops.agent.pipeline._realtime_session.tool_call_span") as mock_span:
+        with patch("clawops.agent.pipeline._openai_realtime.tool_call_span") as mock_span:
             mock_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_span.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -426,21 +445,21 @@ class TestToolCallSpanInstrumentation:
 class TestLLMSessionSpanInstrumentation:
     @pytest.mark.asyncio
     async def test_start_creates_llm_session_span(self):
-        from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
+        from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
         from clawops.agent._tool import ToolRegistry
 
-        config = RealtimeConfig(
+        registry = ToolRegistry()
+        session = OpenAIRealtime(
+            api_key="sk-test",
             system_prompt="test",
-            openai_api_key="sk-test",
             model="gpt-realtime-mini",
             voice="marin",
+            tool_registry=registry,
         )
-        registry = ToolRegistry()
-        session = RealtimeSession(config, registry)
 
         mock_call = MagicMock()
 
-        with patch("clawops.agent.pipeline._realtime_session.llm_session_span") as mock_span, \
+        with patch("clawops.agent.pipeline._openai_realtime.llm_session_span") as mock_span, \
              patch("aiohttp.ClientSession") as mock_http:
             mock_span_cm = MagicMock()
             mock_span_cm.__enter__ = MagicMock(return_value=MagicMock())
@@ -586,6 +605,7 @@ class TestAgentCallsSetupTracing:
                 api_key="test",
                 account_id="acc",
                 from_="+821000000000",
+                session=_make_session(),
                 tracing=config,
             )
             mock_setup.assert_called_once_with(config)
@@ -598,6 +618,7 @@ class TestAgentCallsSetupTracing:
                 api_key="test",
                 account_id="acc",
                 from_="+821000000000",
+                session=_make_session(),
             )
             mock_setup.assert_not_called()
 
@@ -606,12 +627,15 @@ class TestLLMSpanExceptionPropagation:
     @pytest.mark.asyncio
     async def test_cleanup_passes_exception_info_to_span_exit(self):
         """_cleanup이 활성 예외 정보를 span __exit__에 전달하는지 확인."""
-        from clawops.agent.pipeline._realtime_session import RealtimeSession, RealtimeConfig
+        from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
         from clawops.agent._tool import ToolRegistry
 
-        config = RealtimeConfig(system_prompt="test", openai_api_key="sk-test")
         registry = ToolRegistry()
-        session = RealtimeSession(config, registry)
+        session = OpenAIRealtime(
+            api_key="sk-test",
+            system_prompt="test",
+            tool_registry=registry,
+        )
 
         mock_span_ctx = MagicMock()
         mock_span_ctx.__exit__ = MagicMock(return_value=False)
