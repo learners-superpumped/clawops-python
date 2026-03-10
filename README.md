@@ -343,6 +343,12 @@ client = ClawOps(
 
 - **[AI Agent 가이드](docs/agent/)** — 음성 에이전트 상세 사용법, 파이프라인 모드, 커스텀 제공자, MCP 연동
 
+## 다른 언어
+
+| 언어 | 패키지 | 저장소 |
+|------|--------|--------|
+| Node.js / TypeScript | [`@teamlearners/clawops`](https://www.npmjs.com/package/@teamlearners/clawops) | [clawops-node](https://github.com/learners-superpumped/clawops-node) |
+
 ## 요구사항
 
 - Python 3.9+
