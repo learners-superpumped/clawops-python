@@ -16,11 +16,14 @@ pip install clawops[agent,mcp]
 ## 사용법
 
 ```python
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
 from clawops.agent.mcp import MCPServerHTTP, MCPServerStdio
 
 agent = ClawOpsAgent(
     from_="07012341234",
-    system_prompt="상담원입니다.",
+    session=OpenAIRealtime(
+        system_prompt="상담원입니다.",
+    ),
     mcp_servers=[
         # HTTP/SSE 기반 MCP 서버
         MCPServerHTTP(

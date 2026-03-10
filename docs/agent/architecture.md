@@ -16,11 +16,17 @@ ClawOpsAgent
 │   ├── clear               # 버퍼 flush (barge-in)
 │   └── stop                # 미디어 스트림 종료
 │
-├── RealtimeSession (콜별)  # OpenAI Realtime API (기본 모드)
+├── OpenAIRealtime (콜별)   # OpenAI Realtime API
 │   ├── session.update      # 세션 설정 (음성, 도구 등)
-│   ├── audio bridging      # PCM16 ↔ G.711 μ-law 변환
+│   ├── audio bridging      # G.711 μ-law 네이티브 지원
 │   ├── tool calls          # 등록된 함수 자동 호출
 │   └── truncation          # 인터럽트 처리
+│
+├── GeminiRealtime (콜별)   # Google Gemini Live API
+│   ├── setup/setupComplete # 세션 초기화
+│   ├── audio bridging      # G.711 μ-law ↔ PCM16 16kHz/24kHz 변환
+│   ├── tool calls          # 등록된 함수 자동 호출
+│   └── barge-in            # 자동 인터럽트 처리
 │
 ├── PipelineSession (콜별)  # STT → LLM → TTS (파이프라인 모드)
 │   ├── STT loop            # 오디오 → SpeechEvent
@@ -51,13 +57,19 @@ ClawOpsAgent
     └── close()             # 연결 종료
 ```
 
-## 모드 선택
+## 세션 타입
+
+`ClawOpsAgent`의 `session` 파라미터로 세션 타입을 지정합니다:
 
 ```python
-if stt and llm and tts:
-    # PipelineSession 사용
-else:
-    # RealtimeSession 사용 (OpenAI Realtime API)
+# OpenAI Realtime API
+session=OpenAIRealtime(system_prompt="...")
+
+# Google Gemini Live API
+session=GeminiRealtime(system_prompt="...")
+
+# Pipeline (STT + LLM + TTS)
+session=PipelineSession(stt=..., llm=..., tts=...)
 ```
 
 ## 오디오 코덱 체인
@@ -89,7 +101,8 @@ PCM16 16kHz (STT 입력) / PCM16 24kHz (TTS 출력)
 |------|------|-----------|
 | `CLAWOPS_API_KEY` | ClawOps API 키 (`sk_...`) | 예 |
 | `CLAWOPS_ACCOUNT_ID` | 계정 ID (`AC...`) | 예 |
-| `OPENAI_API_KEY` | OpenAI API 키 | Realtime 모드 시 |
+| `OPENAI_API_KEY` | OpenAI API 키 | OpenAI Realtime 사용 시 |
+| `GOOGLE_API_KEY` | Google API 키 | Gemini Realtime 사용 시 |
 | `DEEPGRAM_API_KEY` | Deepgram API 키 | DeepgramSTT 사용 시 |
 | `ELEVENLABS_API_KEY` | ElevenLabs API 키 | ElevenLabsTTS 사용 시 |
 | `CLAWOPS_BASE_URL` | API 기본 URL | 아니오 |

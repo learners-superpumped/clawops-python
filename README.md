@@ -26,13 +26,16 @@ pip install clawops[agent-all]
 `ClawOpsAgent`를 사용하면 한 줄로 인바운드 전화를 AI로 처리할 수 있습니다. ngrok 없이 WebSocket 역방향 연결로 동작합니다.
 
 ```python
-from clawops.agent import ClawOpsAgent
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
+import asyncio
 
 agent = ClawOpsAgent(
-    from_="07012341234",          # 수신 번호
-    system_prompt="친절한 상담원입니다. 고객의 질문에 답변해주세요.",
-    voice="marin",                # OpenAI 음성
-    language="ko",
+    from_="07012341234",
+    session=OpenAIRealtime(
+        system_prompt="친절한 상담원입니다. 고객의 질문에 답변해주세요.",
+        voice="marin",
+        language="ko",
+    ),
 )
 
 @agent.tool
@@ -44,13 +47,7 @@ async def check_order(order_id: str) -> str:
 async def on_start(call):
     print(f"통화 시작: {call.from_number} -> {call.to_number}")
 
-async def main():
-    await agent.start()
-    # 수신 대기 중... (Ctrl+C로 종료)
-    await asyncio.Event().wait()
-
-import asyncio
-asyncio.run(main())
+asyncio.run(agent.start())  # Ctrl+C로 종료
 ```
 
 ### MCP 서버 연동
@@ -62,28 +59,25 @@ pip install clawops[mcp]
 ```
 
 ```python
-from clawops.agent import ClawOpsAgent
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
 from clawops.agent.mcp import MCPServerStdio, MCPServerHTTP
+import asyncio
 
 agent = ClawOpsAgent(
     from_="07012341234",
-    system_prompt="상담원입니다.",
+    session=OpenAIRealtime(
+        system_prompt="상담원입니다.",
+    ),
     mcp_servers=[
         MCPServerStdio("npx", args=["@modelcontextprotocol/server-google"], env={"GOOGLE_API_KEY": "..."}),
         MCPServerHTTP("https://my-mcp-server.com", headers={"Authorization": "Bearer token"}),
     ],
 )
 
-async def main():
-    await agent.start()
-    # 수신 대기 중... (Ctrl+C로 종료)
-    await asyncio.Event().wait()
-
-import asyncio
-asyncio.run(main())
+asyncio.run(agent.start())  # Ctrl+C로 종료
 ```
 
-MCP 서버는 전화가 올 때마다 자동으로 시작되고, 통화 종료 시 정리됩니다. MCP 서버가 제공하는 도구는 `@agent.tool`로 등록한 도구와 함께 OpenAI Realtime에 자동 등록됩니다.
+MCP 서버는 전화가 올 때마다 자동으로 시작되고, 통화 종료 시 정리됩니다. MCP 서버가 제공하는 도구는 `@agent.tool`로 등록한 도구와 함께 세션에 자동 등록됩니다.
 
 ### 디버그 로깅
 
@@ -342,7 +336,8 @@ client = ClawOps(
 | `CLAWOPS_API_KEY`    | API 키 (`sk_...`)      | 예 (생성자에 전달하지 않은 경우)            |
 | `CLAWOPS_ACCOUNT_ID` | 기본 계정 ID (`AC...`) | 예 (생성자에 전달하지 않은 경우)            |
 | `CLAWOPS_BASE_URL`   | API 기본 URL           | 아니오 (기본값: `https://api.claw-ops.com`) |
-| `OPENAI_API_KEY`     | OpenAI API 키          | Agent 사용 시 (생성자에 전달하지 않은 경우) |
+| `OPENAI_API_KEY`     | OpenAI API 키          | OpenAI Realtime 사용 시                     |
+| `GOOGLE_API_KEY`     | Google API 키          | Gemini Realtime 사용 시                     |
 
 ## 문서
 

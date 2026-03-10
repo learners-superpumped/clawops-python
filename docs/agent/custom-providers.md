@@ -375,15 +375,17 @@ def sample_rate(self) -> int:
 
 ```python
 from clawops.agent import ClawOpsAgent
-from clawops.agent.pipeline import DeepgramSTT
+from clawops.agent.pipeline import PipelineSession, DeepgramSTT
 
 # Deepgram STT + Claude LLM + Google TTS
 agent = ClawOpsAgent(
     from_="07012341234",
-    system_prompt="친절한 상담원입니다.",
-    stt=DeepgramSTT(),
-    llm=ClaudeLLM(model="claude-sonnet-4-20250514"),
-    tts=GoogleTTS(voice="ko-KR-Neural2-A"),
+    session=PipelineSession(
+        system_prompt="친절한 상담원입니다.",
+        stt=DeepgramSTT(),
+        llm=ClaudeLLM(model="claude-sonnet-4-20250514"),
+        tts=GoogleTTS(voice="ko-KR-Neural2-A"),
+    ),
 )
 ```
 

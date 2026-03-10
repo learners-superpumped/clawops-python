@@ -21,7 +21,8 @@ pip install clawops[agent-all]
 ```bash
 export CLAWOPS_API_KEY="sk_..."
 export CLAWOPS_ACCOUNT_ID="AC..."
-export OPENAI_API_KEY="sk-..."           # Realtime 모드
+export OPENAI_API_KEY="sk-..."           # OpenAI Realtime
+export GOOGLE_API_KEY="..."              # Gemini Realtime
 export DEEPGRAM_API_KEY="..."            # Pipeline: DeepgramSTT
 export ELEVENLABS_API_KEY="..."          # Pipeline: ElevenLabsTTS
 ```
@@ -29,19 +30,17 @@ export ELEVENLABS_API_KEY="..."          # Pipeline: ElevenLabsTTS
 ## 최소 예제
 
 ```python
-from clawops.agent import ClawOpsAgent
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
 import asyncio
 
 agent = ClawOpsAgent(
     from_="07012341234",
-    system_prompt="친절한 고객센터 상담원입니다.",
+    session=OpenAIRealtime(
+        system_prompt="친절한 고객센터 상담원입니다.",
+    ),
 )
 
-async def main():
-    await agent.start()
-    await asyncio.Event().wait()  # Ctrl+C로 종료
-
-asyncio.run(main())
+asyncio.run(agent.start())  # Ctrl+C로 종료
 ```
 
 이것만으로 `07012341234` 번호로 걸려오는 전화를 AI가 처리합니다.
@@ -49,26 +48,42 @@ asyncio.run(main())
 ## 설정 옵션
 
 ```python
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
+
 agent = ClawOpsAgent(
     # 필수
     from_="07012341234",
+    session=OpenAIRealtime(
+        system_prompt="상담원입니다.",
+        voice="marin",                    # marin, ash, ballad, coral, sage, verse
+        model="gpt-realtime-mini",
+        language="ko",
+        eagerness="high",                 # low, medium, high, auto
+        greeting=True,
+    ),
 
     # 인증 (환경변수 대체 가능)
     api_key="sk_...",
     account_id="AC...",
-    openai_api_key="sk-...",
-
-    # AI 설정
-    system_prompt="상담원입니다.",
-    voice="marin",                    # marin, ash, ballad, coral, sage, verse
-    model="gpt-realtime-mini",
-    language="ko",
-    eagerness="high",                 # low, medium, high, auto
-    greeting=True,
 
     # 녹음
     recording=True,
     recording_path="./recordings",
+)
+```
+
+### Gemini Realtime 사용 시
+
+```python
+from clawops.agent import ClawOpsAgent, GeminiRealtime
+
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=GeminiRealtime(
+        system_prompt="상담원입니다.",
+        voice="Kore",
+        language="ko",
+    ),
 )
 ```
 
@@ -89,7 +104,9 @@ agent = ClawOpsAgent(
 async def main():
     agent = ClawOpsAgent(
         from_="07012345678",
-        system_prompt="예약 확인 도우미입니다.",
+        session=OpenAIRealtime(
+            system_prompt="예약 확인 도우미입니다.",
+        ),
     )
 
     # 발신만 하는 경우 — start() 없이 가능
@@ -98,7 +115,7 @@ async def main():
     print(call.direction)   # "outbound"
 
     # 수신도 같이 하는 경우
-    await agent.start()
+    await agent.start(block=False)
     call = await agent.call("01012345678")
 
 asyncio.run(main())

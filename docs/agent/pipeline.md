@@ -1,23 +1,23 @@
 # 파이프라인 모드
 
-OpenAI Realtime API 대신 STT, LLM, TTS 제공자를 직접 조합하는 모드입니다.
+Realtime API 대신 STT, LLM, TTS 제공자를 직접 조합하는 모드입니다. `PipelineSession`을 사용합니다.
 
 ## 기본 사용법
 
 ```python
 from clawops.agent import ClawOpsAgent
-from clawops.agent.pipeline import DeepgramSTT, OpenAILLM, ElevenLabsTTS
+from clawops.agent.pipeline import PipelineSession, DeepgramSTT, OpenAILLM, ElevenLabsTTS
 
 agent = ClawOpsAgent(
     from_="07012341234",
-    system_prompt="친절한 상담원입니다.",
-    stt=DeepgramSTT(),
-    llm=OpenAILLM(model="gpt-4o-mini"),
-    tts=ElevenLabsTTS(),
+    session=PipelineSession(
+        system_prompt="친절한 상담원입니다.",
+        stt=DeepgramSTT(),
+        llm=OpenAILLM(model="gpt-4o-mini"),
+        tts=ElevenLabsTTS(),
+    ),
 )
 ```
-
-`stt`, `llm`, `tts` 세 개를 모두 전달하면 자동으로 파이프라인 모드로 전환됩니다.
 
 ## 오디오 처리 흐름
 
@@ -117,15 +117,15 @@ tts = ElevenLabsTTS(
 
 AI가 아직 말하기 전에 사용자가 추가 발화하면, 0.5초 대기 후 한 번에 응답합니다. 빠르게 연속 발화해도 불필요한 응답 생성을 방지합니다.
 
-## Realtime 모드와 비교
+## 세션 타입 비교
 
-| | Realtime | Pipeline |
-|---|----------|----------|
-| 제공자 | OpenAI만 | 자유 조합 |
-| 지연 | 낮음 (단일 API) | 중간 (STT+LLM+TTS) |
-| Barge-in | 내장 VAD | Deepgram VAD + clear_audio |
-| 비용 | Realtime API 요금 | 각 제공자 개별 요금 |
-| 음성 | OpenAI 음성만 | ElevenLabs 등 자유 선택 |
+| | OpenAI Realtime | Gemini Realtime | Pipeline |
+|---|-----------------|-----------------|----------|
+| 제공자 | OpenAI | Google | 자유 조합 |
+| 지연 | 낮음 (단일 API) | 낮음 (단일 API) | 중간 (STT+LLM+TTS) |
+| Barge-in | 내장 VAD | 내장 VAD | Deepgram VAD + clear_audio |
+| 비용 | Realtime API 요금 | Gemini API 요금 | 각 제공자 개별 요금 |
+| 음성 | OpenAI 음성 | Google 음성 | ElevenLabs 등 자유 선택 |
 
 ## 커스텀 제공자
 

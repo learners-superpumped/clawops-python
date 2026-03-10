@@ -23,12 +23,14 @@ provider = TracerProvider()
 provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(provider)
 
-from clawops.agent import ClawOpsAgent
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
 from clawops.agent.tracing import TracingConfig
 
 agent = ClawOpsAgent(
     from_="07012341234",
-    system_prompt="상담원입니다.",
+    session=OpenAIRealtime(
+        system_prompt="상담원입니다.",
+    ),
     tracing=TracingConfig(
         service_name="my-call-center",
         tracer_provider=provider,

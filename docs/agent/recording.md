@@ -5,9 +5,13 @@
 ## 설정
 
 ```python
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
+
 agent = ClawOpsAgent(
     from_="07012341234",
-    system_prompt="상담원입니다.",
+    session=OpenAIRealtime(
+        system_prompt="상담원입니다.",
+    ),
     recording=True,
     recording_path="./recordings",  # 기본값
 )
