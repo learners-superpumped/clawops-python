@@ -83,6 +83,10 @@ class AnthropicLLM:
                     "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
                 })
 
+        # Anthropic API는 빈 messages를 허용하지 않음 (greeting 등 system만 있는 경우)
+        if not converted:
+            converted.append({"role": "user", "content": "[통화 시작] 첫 인사를 해주세요."})
+
         kwargs: dict[str, Any] = {
             "model": self._model,
             "messages": converted,
