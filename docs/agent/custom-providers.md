@@ -187,109 +187,29 @@ class LLM(Protocol):
   }
   ```
 
-### 예시: Anthropic Claude LLM
+### 예시: 커스텀 LLM
+
+> **참고:** Anthropic Claude와 Google Gemini는 빌트인 `AnthropicLLM`, `GeminiLLM`을 사용할 수 있습니다. 아래는 커스텀 LLM을 직접 구현하는 예시입니다.
 
 ```python
+import json
 from typing import Any, AsyncIterator
 
-class ClaudeLLM:
-    def __init__(self, model: str = "claude-sonnet-4-20250514"):
-        self._model = model
+class MyLLM:
+    """커스텀 LLM — LLM Protocol만 구현하면 됩니다."""
 
     async def generate(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
-        import anthropic
-
-        client = anthropic.AsyncAnthropic()
-
-        # OpenAI 포맷 → Anthropic 포맷 변환
-        system = ""
-        claude_messages = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system = msg["content"]
-            elif msg["role"] == "tool":
-                claude_messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg["tool_call_id"],
-                        "content": msg["content"],
-                    }],
-                })
-            elif msg["role"] == "assistant" and msg.get("tool_calls"):
-                content = []
-                if msg.get("content"):
-                    content.append({"type": "text", "text": msg["content"]})
-                for tc in msg["tool_calls"]:
-                    content.append({
-                        "type": "tool_use",
-                        "id": tc["id"],
-                        "name": tc["function"]["name"],
-                        "input": json.loads(tc["function"]["arguments"]),
-                    })
-                claude_messages.append({"role": "assistant", "content": content})
-            else:
-                claude_messages.append(msg)
-
-        # Tool 포맷 변환
-        claude_tools = None
-        if tools:
-            claude_tools = []
-            for t in tools:
-                func = t["function"]
-                claude_tools.append({
-                    "name": func["name"],
-                    "description": func.get("description", ""),
-                    "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
-                })
-
-        kwargs = {
-            "model": self._model,
-            "max_tokens": 4096,
-            "messages": claude_messages,
-        }
-        if system:
-            kwargs["system"] = system
-        if claude_tools:
-            kwargs["tools"] = claude_tools
-
-        try:
-            tool_uses = []
-            async with client.messages.stream(**kwargs) as stream:
-                async for event in stream:
-                    if event.type == "content_block_delta":
-                        if event.delta.type == "text_delta":
-                            yield event.delta.text
-                        elif event.delta.type == "input_json_delta":
-                            # tool input 누적은 stream 종료 후 처리
-                            pass
-                    elif event.type == "content_block_stop":
-                        pass
-
-                # 스트림 종료 후 tool_use 확인
-                response = await stream.get_final_message()
-                for block in response.content:
-                    if block.type == "tool_use":
-                        tool_uses.append({
-                            "id": block.id,
-                            "function": {
-                                "name": block.name,
-                                "arguments": json.dumps(block.input),
-                            },
-                        })
-
-            if tool_uses:
-                import json as _json
-                yield _json.dumps({
-                    "type": "tool_calls",
-                    "tool_calls": tool_uses,
-                })
-        finally:
-            await client.close()
+        # 1. messages에서 system, user, assistant, tool 역할을 읽어
+        #    사용하는 LLM API에 맞게 변환합니다.
+        # 2. tools가 있으면 OpenAI Chat Completions 포맷을 해당 API 포맷으로 변환합니다.
+        # 3. 텍스트 토큰을 스트리밍으로 yield합니다.
+        # 4. Tool call이 필요하면 아래 JSON 포맷으로 yield합니다:
+        #    {"type": "tool_calls", "tool_calls": [{"id": "...", "function": {"name": "...", "arguments": "..."}}]}
+        yield "안녕하세요!"
 ```
 
 ### Tool Call 처리 규칙
@@ -377,13 +297,15 @@ def sample_rate(self) -> int:
 from clawops.agent import ClawOpsAgent
 from clawops.agent.pipeline import PipelineSession, DeepgramSTT
 
-# Deepgram STT + Claude LLM + Google TTS
+# Deepgram STT + Anthropic Claude LLM + Google TTS
+from clawops.agent.pipeline import AnthropicLLM
+
 agent = ClawOpsAgent(
     from_="07012341234",
     session=PipelineSession(
         system_prompt="친절한 상담원입니다.",
         stt=DeepgramSTT(),
-        llm=ClaudeLLM(model="claude-sonnet-4-20250514"),
+        llm=AnthropicLLM(model="claude-sonnet-4-6"),
         tts=GoogleTTS(voice="ko-KR-Neural2-A"),
     ),
 )

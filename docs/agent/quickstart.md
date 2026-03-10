@@ -6,8 +6,10 @@
 # 기본 (OpenAI Realtime 모드)
 pip install clawops[agent]
 
-# 파이프라인 모드 (특정 프로바이더)
-pip install clawops[agent,deepgram,elevenlabs,openai-llm]
+# 파이프라인 모드
+pip install clawops[agent,deepgram,elevenlabs,openai-llm]    # OpenAI LLM
+pip install clawops[agent,deepgram,elevenlabs,anthropic-llm]  # Anthropic LLM
+pip install clawops[agent,deepgram,elevenlabs,gemini-llm]    # Gemini LLM
 
 # MCP 서버 지원 포함
 pip install clawops[agent,mcp]
@@ -21,8 +23,9 @@ pip install clawops[agent-all]
 ```bash
 export CLAWOPS_API_KEY="sk_..."
 export CLAWOPS_ACCOUNT_ID="AC..."
-export OPENAI_API_KEY="sk-..."           # OpenAI Realtime
-export GOOGLE_API_KEY="..."              # Gemini Realtime
+export OPENAI_API_KEY="sk-..."           # OpenAI Realtime / OpenAILLM
+export ANTHROPIC_API_KEY="..."           # AnthropicLLM
+export GOOGLE_API_KEY="..."              # Gemini Realtime / GeminiLLM
 export DEEPGRAM_API_KEY="..."            # Pipeline: DeepgramSTT
 export ELEVENLABS_API_KEY="..."          # Pipeline: ElevenLabsTTS
 ```

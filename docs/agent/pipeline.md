@@ -82,6 +82,46 @@ llm = OpenAILLM(
 - 스트리밍 텍스트 생성
 - Tool call 자동 처리 (Chat Completions 포맷)
 
+### AnthropicLLM
+
+Anthropic Claude Messages 스트리밍.
+
+```python
+from clawops.agent.pipeline import AnthropicLLM
+
+llm = AnthropicLLM(
+    model="claude-sonnet-4-6",  # 모델명
+    temperature=0.8,
+    max_tokens=4096,
+)
+```
+
+환경변수: `ANTHROPIC_API_KEY`
+
+**특징:**
+- 스트리밍 텍스트 생성
+- Tool call 자동 처리 (OpenAI 메시지 포맷을 Anthropic 포맷으로 자동 변환)
+
+### GeminiLLM
+
+Google Gemini 스트리밍.
+
+```python
+from clawops.agent.pipeline import GeminiLLM
+
+llm = GeminiLLM(
+    model="gemini-2.5-flash",  # 모델명
+    temperature=0.8,
+    max_tokens=4096,
+)
+```
+
+환경변수: `GOOGLE_API_KEY`
+
+**특징:**
+- 스트리밍 텍스트 생성
+- Tool call 자동 처리 (OpenAI 메시지 포맷을 Gemini 포맷으로 자동 변환)
+
 ### ElevenLabsTTS
 
 ElevenLabs WebSocket 스트리밍 음성 합성.
