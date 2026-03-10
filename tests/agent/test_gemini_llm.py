@@ -30,7 +30,7 @@ async def test_gemini_llm_generate_text():
     part2.function_call = None
     chunk2.candidates[0].content.parts = [part2]
 
-    async def mock_stream(*args, **kwargs):
+    async def mock_aiter():
         yield chunk1
         yield chunk2
 
@@ -40,7 +40,7 @@ async def test_gemini_llm_generate_text():
     mock_types.GenerateContentConfig = MagicMock(return_value=MagicMock())
 
     mock_client = MagicMock()
-    mock_client.aio.models.generate_content_stream = mock_stream
+    mock_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_aiter())
 
     mock_genai = MagicMock()
     mock_genai.Client = MagicMock(return_value=mock_client)
@@ -78,7 +78,7 @@ async def test_gemini_llm_generate_tool_call():
     part.function_call.args = {"city": "서울"}
     chunk.candidates[0].content.parts = [part]
 
-    async def mock_stream(*args, **kwargs):
+    async def mock_aiter():
         yield chunk
 
     mock_types = MagicMock()
@@ -89,7 +89,7 @@ async def test_gemini_llm_generate_tool_call():
     mock_types.FunctionDeclaration = MagicMock()
 
     mock_client = MagicMock()
-    mock_client.aio.models.generate_content_stream = mock_stream
+    mock_client.aio.models.generate_content_stream = AsyncMock(return_value=mock_aiter())
 
     mock_genai = MagicMock()
     mock_genai.Client = MagicMock(return_value=mock_client)

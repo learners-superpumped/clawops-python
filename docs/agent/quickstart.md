@@ -10,6 +10,7 @@ pip install clawops[agent]
 pip install clawops[agent,deepgram,elevenlabs,openai-llm]    # OpenAI LLM
 pip install clawops[agent,deepgram,elevenlabs,anthropic-llm]  # Anthropic LLM
 pip install clawops[agent,deepgram,elevenlabs,gemini-llm]    # Gemini LLM
+pip install clawops[agent,deepgram,elevenlabs,ollama]        # Ollama (로컬)
 
 # MCP 서버 지원 포함
 pip install clawops[agent,mcp]

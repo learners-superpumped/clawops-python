@@ -122,6 +122,28 @@ llm = GeminiLLM(
 - 스트리밍 텍스트 생성
 - Tool call 자동 처리 (OpenAI 메시지 포맷을 Gemini 포맷으로 자동 변환)
 
+### OllamaLLM
+
+Ollama 로컬 모델 스트리밍 (OpenAI 호환 API).
+
+```python
+from clawops.agent.pipeline import OllamaLLM
+
+llm = OllamaLLM(
+    model="llama3.2",           # Ollama 모델명
+    base_url="http://localhost:11434/v1",  # 기본값
+    temperature=0.8,
+    max_tokens=4096,
+)
+```
+
+환경변수: `OLLAMA_BASE_URL` (기본 `http://localhost:11434/v1`)
+
+**특징:**
+- OpenAI 호환 API 사용 (별도 SDK 불필요, `openai` 패키지 사용)
+- 스트리밍 텍스트 생성
+- Tool call 지원 (모델이 지원하는 경우)
+
 ### ElevenLabsTTS
 
 ElevenLabs WebSocket 스트리밍 음성 합성.
