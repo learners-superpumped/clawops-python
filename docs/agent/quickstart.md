@@ -129,18 +129,26 @@ asyncio.run(main())
 ## 에러 처리
 
 ```python
+from clawops.agent import ClawOpsAgent, OpenAIRealtime
 from clawops._exceptions import AgentError, AgentConnectionError
+import asyncio
+
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=OpenAIRealtime(
+        system_prompt="상담원입니다.",
+    ),
+)
 
 async def main():
     try:
         await agent.start()
-        await asyncio.Event().wait()
     except AgentConnectionError as e:
         print(f"서버 연결 실패: {e}")
     except AgentError as e:
         print(f"에이전트 에러: {e}")
-    finally:
-        await agent.stop()
+
+asyncio.run(main())
 ```
 
 | 에러 | 설명 |
