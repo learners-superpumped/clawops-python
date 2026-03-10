@@ -4,6 +4,11 @@
 
 ```
 ClawOpsAgent
+├── connect()              # Control WS 연결 (논블로킹)
+├── serve()                # connect + 시그널 대기 + auto disconnect
+├── disconnect()           # 연결 해제
+├── call(to)               # 발신 (auto connect)
+│
 ├── ControlWebSocket        # 서버 연결 (상시, auto-reconnect)
 │   ├── call.incoming       # 인바운드 콜 알림 수신
 │   ├── call.outbound_ready # 아웃바운드 콜 미디어 준비
@@ -49,7 +54,8 @@ ClawOpsAgent
 ├── CallSession (콜별)      # 통화 상태 관리
 │   ├── send_audio()        # 응답 오디오 전송
 │   ├── clear_audio()       # 오디오 버퍼 클리어
-│   └── hangup()            # 통화 종료
+│   ├── hangup()            # 통화 종료
+│   └── wait()              # 통화 종료까지 대기
 │
 └── MCPClient (콜별)        # MCP 서버 연동
     ├── connect()           # 서버 연결 + tools/list

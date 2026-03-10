@@ -47,7 +47,7 @@ async def check_order(order_id: str) -> str:
 async def on_start(call):
     print(f"통화 시작: {call.from_number} -> {call.to_number}")
 
-asyncio.run(agent.start())  # Ctrl+C로 종료
+asyncio.run(agent.serve())  # Ctrl+C로 종료
 ```
 
 ### MCP 서버 연동
@@ -74,7 +74,7 @@ agent = ClawOpsAgent(
     ],
 )
 
-asyncio.run(agent.start())  # Ctrl+C로 종료
+asyncio.run(agent.serve())  # Ctrl+C로 종료
 ```
 
 MCP 서버는 전화가 올 때마다 자동으로 시작되고, 통화 종료 시 정리됩니다. MCP 서버가 제공하는 도구는 `@agent.tool`로 등록한 도구와 함께 세션에 자동 등록됩니다.

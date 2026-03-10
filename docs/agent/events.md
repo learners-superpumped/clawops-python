@@ -61,4 +61,7 @@ async def on_start(call):
     await call.send_audio(pcm16_bytes)   # 오디오 전송
     await call.clear_audio()             # 오디오 큐 초기화 (인터럽트 시)
     await call.hangup()                  # 통화 종료
+    await call.wait()                    # 통화 종료까지 대기 (아웃바운드 시 유용)
 ```
+
+> `await call.wait()`는 통화가 종료되어 `status`가 `completed`로 변경될 때까지 대기합니다. 주로 아웃바운드 단건 발신 시 통화 완료를 기다리는 데 사용합니다.

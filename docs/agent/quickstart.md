@@ -40,7 +40,7 @@ agent = ClawOpsAgent(
     ),
 )
 
-asyncio.run(agent.start())  # Ctrl+C로 종료
+asyncio.run(agent.serve())  # Ctrl+C로 종료
 ```
 
 이것만으로 `07012341234` 번호로 걸려오는 전화를 AI가 처리합니다.
@@ -109,14 +109,17 @@ async def main():
         ),
     )
 
-    # 발신만 하는 경우 — start() 없이 가능
-    call = await agent.call("01012345678", timeout=30)
-    print(call.call_id)     # 즉시 사용 가능
-    print(call.direction)   # "outbound"
+    # 발신만 하는 경우 — 자동으로 connect() 수행
+    session = await agent.call("01012345678", timeout=30)
+    print(session.call_id)     # 즉시 사용 가능
+    print(session.direction)   # "outbound"
+    await session.wait()       # 통화 종료까지 대기
+    await agent.disconnect()
 
-    # 수신도 같이 하는 경우
-    await agent.start(block=False)
-    call = await agent.call("01012345678")
+    # 수신도 같이 하는 경우 (혼합 모드)
+    await agent.connect()
+    session = await agent.call("01012345678")
+    # agent는 인바운드 수신도 계속 처리
 
 asyncio.run(main())
 ```
@@ -142,7 +145,7 @@ agent = ClawOpsAgent(
 
 async def main():
     try:
-        await agent.start()
+        await agent.serve()
     except AgentConnectionError as e:
         print(f"서버 연결 실패: {e}")
     except AgentError as e:
