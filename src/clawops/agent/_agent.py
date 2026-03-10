@@ -80,30 +80,31 @@ class ClawOpsAgent:
             return fn
         return decorator
 
-    async def start(self, *, block: bool = True) -> None:
-        """Control WS 연결 + 수신 대기 시작.
-
-        Args:
-            block: True이면 SIGINT/SIGTERM까지 대기 후 자동으로 stop()을 호출한다.
-        """
+    async def connect(self) -> None:
+        """Control WS에 연결한다. 블로킹하지 않는다."""
         if self._control_ws is not None:
             return
         await self._ensure_control_ws()
-        log.info(f"ClawOpsAgent started on {self._from_number}")
+        log.info(f"ClawOpsAgent connected on {self._from_number}")
 
-        if block:
-            stop_event = asyncio.Event()
-            loop = asyncio.get_running_loop()
+    async def serve(self) -> None:
+        """인바운드 서버 모드: SIGINT/SIGTERM까지 대기 후 자동으로 disconnect()를 호출한다.
+
+        connect()가 호출되지 않은 상태면 자동으로 connect()를 먼저 수행한다.
+        """
+        await self.connect()
+        stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop_event.set)
+        try:
+            await stop_event.wait()
+        finally:
             for sig in (signal.SIGINT, signal.SIGTERM):
-                loop.add_signal_handler(sig, stop_event.set)
-            try:
-                await stop_event.wait()
-            finally:
-                for sig in (signal.SIGINT, signal.SIGTERM):
-                    loop.remove_signal_handler(sig)
-                await self.stop()
+                loop.remove_signal_handler(sig)
+            await self.disconnect()
 
-    async def stop(self) -> None:
+    async def disconnect(self) -> None:
         """Control WS 닫기 + 활성 세션 정리."""
         if self._control_ws:
             await self._control_ws.close()
@@ -112,7 +113,7 @@ class ClawOpsAgent:
             self._control_ws_task.cancel()
             self._control_ws_task = None
         self._active_sessions.clear()
-        log.info("ClawOpsAgent stopped")
+        log.info("ClawOpsAgent disconnected")
 
     async def _ensure_control_ws(self) -> None:
         """Control WS가 없으면 연결한다."""
@@ -133,8 +134,11 @@ class ClawOpsAgent:
         await self._control_ws.wait_connected()
 
     async def call(self, to: str, *, timeout: int = 60) -> CallSession:
-        """발신 전화를 건다. CallSession을 즉시 리턴 (queued 상태)."""
-        await self._ensure_control_ws()
+        """발신 전화를 건다. CallSession을 즉시 리턴 (queued 상태).
+
+        connect()가 호출되지 않은 상태면 자동으로 connect()를 먼저 수행한다.
+        """
+        await self.connect()
 
         import aiohttp as _aiohttp
         url = f"{self._base_url}/v1/accounts/{self._account_id}/calls"
@@ -224,6 +228,8 @@ class ClawOpsAgent:
             session = self._session
             if hasattr(session, "set_tool_registry"):
                 session.set_tool_registry(call_tools)
+            if recorder and hasattr(session, "set_recorder"):
+                session.set_recorder(recorder)
 
             async def on_audio(ulaw: bytes, ts: int) -> None:
                 await session.feed_audio(ulaw, ts)
@@ -257,6 +263,7 @@ class ClawOpsAgent:
                 if recorder:
                     recorder.stop()
                 await call._emit("call_end")
+                call._mark_ended()
                 self._active_sessions.pop(call.call_id, None)
 
     async def _on_media_start(self, call: CallSession, info: dict[str, Any]) -> None:
@@ -292,9 +299,13 @@ class ClawOpsAgent:
             call.status = reason
             log.info(f"Outbound call failed: {call_id} ({reason})")
             await call._emit("call_failed", reason)
+            call._mark_ended()
             self._active_sessions.pop(call_id, None)
 
     async def _handle_ended(self, data: dict[str, Any]) -> None:
         call_id = data.get("callId", "")
+        call = self._active_sessions.get(call_id)
         log.info(f"Call ended (server): {call_id}")
+        if call:
+            call._mark_ended()
         self._active_sessions.pop(call_id, None)

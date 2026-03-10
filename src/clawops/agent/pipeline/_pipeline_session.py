@@ -75,6 +75,10 @@ class PipelineSession:
         """콜별로 fork된 ToolRegistry를 주입한다."""
         self._tools = registry
 
+    def set_recorder(self, recorder: AudioRecorder) -> None:
+        """콜별로 생성된 AudioRecorder를 주입한다."""
+        self._recorder = recorder
+
     async def start(self, call: CallSession) -> None:
         self._call = call
         self._running = True

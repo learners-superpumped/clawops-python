@@ -1,6 +1,7 @@
 """CallSession: per-call 상태 관리."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any, Callable, Awaitable
 
@@ -29,6 +30,7 @@ class CallSession:
         self._hangup_fn: Callable[[], Awaitable[None]] | None = None
 
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
+        self._ended_event = asyncio.Event()
 
     @property
     def duration(self) -> float:
@@ -48,6 +50,15 @@ class CallSession:
 
     def on(self, event: str, handler: Callable[..., Awaitable[None]]) -> None:
         self._event_handlers.setdefault(event, []).append(handler)
+
+    async def wait(self) -> None:
+        """통화가 종료될 때까지 대기한다."""
+        await self._ended_event.wait()
+
+    def _mark_ended(self) -> None:
+        """통화 종료를 알린다. (내부 전용)"""
+        self.status = "completed"
+        self._ended_event.set()
 
     async def _emit(self, event: str, *args: Any) -> None:
         for handler in self._event_handlers.get(event, []):
