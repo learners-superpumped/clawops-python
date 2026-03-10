@@ -38,7 +38,7 @@ class OpenAIRealtimeConfig:
     system_prompt: str
     openai_api_key: str
     voice: str = "marin"
-    model: str = "gpt-realtime-mini"
+    model: str = "gpt-realtime-1.5"
     language: str = "ko"
     eagerness: str = "high"
     greeting: bool = True
@@ -47,7 +47,7 @@ class OpenAIRealtimeConfig:
 class OpenAIRealtime:
     """OpenAI Realtime API 기반 음성 세션.
 
-    Session Protocol을 구현한다. ``gpt-realtime-mini``, ``gpt-4o-mini-realtime``
+    Session Protocol을 구현한다. ``gpt-realtime-1.5``, ``gpt-4o-mini-realtime``
     등 OpenAI의 realtime 모델을 사용한다.
     """
 
@@ -56,7 +56,7 @@ class OpenAIRealtime:
         *,
         api_key: str | None = None,
         system_prompt: str = "",
-        model: str = "gpt-realtime-mini",
+        model: str = "gpt-realtime-1.5",
         voice: str = "marin",
         language: str = "ko",
         eagerness: str = "high",

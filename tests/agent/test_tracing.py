@@ -94,7 +94,7 @@ class TestSpansNoOtel:
         from clawops.agent.tracing._spans import llm_session_span
 
         with patch("clawops.agent.tracing._spans._tracer", None):
-            with llm_session_span("gpt-realtime-mini") as span:
+            with llm_session_span("gpt-realtime-1.5") as span:
                 assert span is None
 
 
@@ -172,13 +172,13 @@ class TestSpansWithMockTracer:
         tracer, mock_span = self._make_mock_tracer()
         with patch("clawops.agent.tracing._spans._tracer", tracer), \
              patch("clawops.agent.tracing._spans._enabled", True):
-            with llm_session_span("gpt-realtime-mini", voice="marin") as span:
+            with llm_session_span("gpt-realtime-1.5", voice="marin") as span:
                 assert span is mock_span
 
         args, kwargs = tracer.start_as_current_span.call_args
         assert args[0] == "llm.session"
         assert kwargs["attributes"]["gen_ai.system"] == "openai"
-        assert kwargs["attributes"]["gen_ai.request.model"] == "gpt-realtime-mini"
+        assert kwargs["attributes"]["gen_ai.request.model"] == "gpt-realtime-1.5"
         assert kwargs["attributes"]["gen_ai.request.voice"] == "marin"
 
 
@@ -452,7 +452,7 @@ class TestLLMSessionSpanInstrumentation:
         session = OpenAIRealtime(
             api_key="sk-test",
             system_prompt="test",
-            model="gpt-realtime-mini",
+            model="gpt-realtime-1.5",
             voice="marin",
             tool_registry=registry,
         )
@@ -477,7 +477,7 @@ class TestLLMSessionSpanInstrumentation:
 
             await session.start(mock_call)
 
-            mock_span.assert_called_once_with("gpt-realtime-mini", voice="marin")
+            mock_span.assert_called_once_with("gpt-realtime-1.5", voice="marin")
 
             # cleanup
             await session.stop()

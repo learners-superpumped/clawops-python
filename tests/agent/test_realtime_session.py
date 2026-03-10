@@ -8,7 +8,7 @@ def test_openai_realtime_config_defaults():
         openai_api_key="sk-test",
     )
     assert config.voice == "marin"
-    assert config.model == "gpt-realtime-mini"
+    assert config.model == "gpt-realtime-1.5"
     assert config.language == "ko"
     assert config.eagerness == "high"
     assert config.greeting is True
@@ -33,17 +33,17 @@ def test_openai_realtime_init():
     session = OpenAIRealtime(
         api_key="sk-test",
         system_prompt="You are a helpful assistant.",
-        model="gpt-realtime-mini",
+        model="gpt-realtime-1.5",
         voice="marin",
     )
     assert session._config.openai_api_key == "sk-test"
     assert session._config.system_prompt == "You are a helpful assistant."
-    assert session._config.model == "gpt-realtime-mini"
+    assert session._config.model == "gpt-realtime-1.5"
 
 
 def test_openai_realtime_defaults():
     session = OpenAIRealtime(api_key="sk-test")
-    assert session._config.model == "gpt-realtime-mini"
+    assert session._config.model == "gpt-realtime-1.5"
     assert session._config.voice == "marin"
     assert session._config.language == "ko"
     assert session._config.greeting is True
