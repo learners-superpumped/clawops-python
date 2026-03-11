@@ -26,6 +26,7 @@ class MessageCreateParams(TypedDict, total=False):
     """제목 (MMS 등에서 사용)."""
 
     media_url: Annotated[list[str], PropertyInfo(alias="MediaUrl")]
+    """첨부 이미지 URL 목록 (최대 3개, jpg/png/bmp, 장당 300KB 이하)."""
 
 
 class MessageListParams(TypedDict, total=False):
