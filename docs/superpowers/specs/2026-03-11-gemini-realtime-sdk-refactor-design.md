@@ -138,6 +138,40 @@ await self._session.send_client_content(
 )
 ```
 
+## Error Handling
+
+### start() 연결 실패
+
+`client.aio.live.connect().__aenter__()`에서 예외 발생 시 (잘못된 API key, 네트워크, 모델 미지원 등), tracing span을 정리하고 예외를 전파한다.
+
+```python
+try:
+    self._session = await self._live_ctx.__aenter__()
+except Exception:
+    if self._llm_span_ctx:
+        self._llm_span_ctx.__exit__(*sys.exc_info())
+    raise
+```
+
+### feed_audio() 전송 실패
+
+세션이 끊어진 상태에서 `send_realtime_input()` 호출 시, 예외를 로깅하고 무시한다 (콜이 곧 종료될 것이므로).
+
+```python
+try:
+    await self._session.send_realtime_input(...)
+except Exception as e:
+    log.warning(f"Gemini audio send failed: {e}")
+```
+
+### cleanup 멱등성
+
+`_receive_loop()`의 `finally`와 `stop()` 모두 `_cleanup()`을 호출할 수 있다. `_cleanup()`은 `_live_ctx`를 None 체크하여 중복 실행을 방지한다.
+
+### 세션 연결 끊김
+
+`_receive_loop()`에서 예외 발생 시 cleanup 후 종료. 재연결은 시도하지 않는다 (콜 자체가 종료됨).
+
 ## Dependencies
 
 - `google-genai>=1.60.0` (pyproject.toml의 gemini-llm extra에서 버전 상향)
@@ -161,3 +195,8 @@ await self._session.send_client_content(
 - `_send()` 메서드 (raw JSON 전송)
 - 디버그 WAV 덤프 코드
 - 디버그 오디오 레벨 로깅
+
+## Notes
+
+- `language` 생성자 파라미터는 현재 사용되지 않으나, OpenAI Realtime과의 인터페이스 호환을 위해 유지한다.
+- `model_turn.parts[].text`는 assistant transcript로 emit하지 않는다. `output_audio_transcription`이 활성화되면 SDK가 별도의 transcription 이벤트를 전송하므로, model_turn의 text는 무시하여 중복을 방지한다.
