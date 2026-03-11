@@ -26,6 +26,7 @@ from ._exceptions import (
     InternalServerError,
     NotFoundError,
     PermissionDeniedError,
+    RateLimitError,
     ServiceUnavailableError,
     UnprocessableEntityError,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "NotFoundError",
     "ConflictError",
     "UnprocessableEntityError",
+    "RateLimitError",
     "InternalServerError",
     "ServiceUnavailableError",
     "WebhookVerificationError",

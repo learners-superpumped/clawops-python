@@ -71,6 +71,15 @@ class UnprocessableEntityError(APIStatusError):
     status_code: int = 422
 
 
+class RateLimitError(APIStatusError):
+    """HTTP 429 Too Many Requests.
+
+    동시 통화 한도 초과 등 일시적 제한. SDK는 자동 재시도(최대 2회, 지수 backoff)를 수행한다.
+    즉각 피드백이 필요하면 client 생성 시 max_retries=0으로 재시도를 비활성화하라.
+    """
+    status_code: int = 429
+
+
 class InternalServerError(APIStatusError):
     """HTTP 500+ Internal Server Error."""
     status_code: int = 500
@@ -119,6 +128,7 @@ _STATUS_CODE_TO_ERROR: dict[int, type[APIStatusError]] = {
     404: NotFoundError,
     409: ConflictError,
     422: UnprocessableEntityError,
+    429: RateLimitError,
     500: InternalServerError,
     503: ServiceUnavailableError,
 }
