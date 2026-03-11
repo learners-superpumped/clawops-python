@@ -303,7 +303,7 @@ class GeminiRealtime:
             async for msg in self._ws:
                 event = self._parse_ws_message(msg)
                 if event is not None:
-                    log.debug(f"Gemini recv: {list(event.keys())}")
+                    log.log(5, f"Gemini recv: {list(event.keys())}")
                     await self._handle_event(event)
                 elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                     log.warning(f"Gemini WS closed: {msg.type}")
@@ -454,7 +454,7 @@ class GeminiRealtime:
         if self._ws and not self._ws.closed:
             try:
                 payload = json.dumps(data)
-                log.debug(f"Gemini WS send: {list(data.keys())} ({len(payload)} bytes)")
+                log.log(5, f"Gemini WS send: {list(data.keys())} ({len(payload)} bytes)")
                 await self._ws.send_str(payload)
             except Exception as e:
                 log.error(f"Gemini WS send failed: {e}")
