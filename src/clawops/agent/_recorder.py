@@ -86,15 +86,17 @@ class AudioRecorder:
 
     def _expected_bytes(self) -> int:
         elapsed = time.monotonic() - self._start_time
-        return int(elapsed * BYTES_PER_SECOND) & ~1  # 2-byte align
+        return int(elapsed * BYTES_PER_SECOND)
 
     def _pad_silence(self, f, written: int) -> int:
         expected = self._expected_bytes()
         gap = expected - written
+        if gap <= 0:
+            return 0
+        gap = gap - (gap % 2)  # 2-byte align
         if gap > 0:
             f.write(b"\x00" * gap)
-            return written + gap
-        return written
+        return gap
 
     def _write_to_mix(self, data: bytes, track_pos: int) -> None:
         if not self._f_mix:
@@ -115,17 +117,22 @@ class AudioRecorder:
                 self._mix_written = mix_data_pos + len(data)
         else:
             if mix_data_pos > self._mix_written:
-                self._f_mix.seek(44 + self._mix_written)
-                self._f_mix.write(b"\x00" * (mix_data_pos - self._mix_written))
-            self._f_mix.seek(file_pos)
+                gap = mix_data_pos - self._mix_written
+                gap = gap - (gap % 2)  # 2-byte align
+                if gap > 0:
+                    self._f_mix.seek(44 + self._mix_written)
+                    self._f_mix.write(b"\x00" * gap)
+                    self._mix_written += gap
+            self._f_mix.seek(44 + self._mix_written)
             self._f_mix.write(data)
-            self._mix_written = mix_data_pos + len(data)
+            self._mix_written += len(data)
 
     def write_inbound(self, pcm16_8k: bytes) -> None:
         if not self._started or not self._f_in:
             return
         try:
-            self._in_written = self._pad_silence(self._f_in, self._in_written)
+            gap = self._pad_silence(self._f_in, self._in_written)
+            self._in_written += gap
             pos_before = self._in_written
             self._f_in.write(pcm16_8k)
             self._in_written += len(pcm16_8k)
@@ -137,7 +144,8 @@ class AudioRecorder:
         if not self._started or not self._f_out:
             return
         try:
-            self._out_written = self._pad_silence(self._f_out, self._out_written)
+            gap = self._pad_silence(self._f_out, self._out_written)
+            self._out_written += gap
             pos_before = self._out_written
             self._f_out.write(pcm16_8k)
             self._out_written += len(pcm16_8k)
