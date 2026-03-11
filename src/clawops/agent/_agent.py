@@ -151,7 +151,12 @@ class ClawOpsAgent:
             async with session.post(url, json=body, headers=headers) as resp:
                 if resp.status != 201:
                     error = await resp.json()
-                    raise AgentError(f"발신 실패 ({resp.status}): {error.get('error', '')}")
+                    err_msg = error.get("error", "")
+                    err_code = error.get("code", "")
+                    agent_err = AgentError(f"발신 실패 ({resp.status}): {err_msg}")
+                    agent_err.status = resp.status
+                    agent_err.code = err_code
+                    raise agent_err
                 data = await resp.json()
 
         call_session = CallSession(
