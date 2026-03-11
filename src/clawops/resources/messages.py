@@ -19,6 +19,7 @@ class Messages(SyncAPIResource):
         body: str,
         type: Literal["sms", "mms", "rcs", "kakao"] | None = None,
         subject: str | None = None,
+        media_url: list[str] | None = None,
         extra_headers: dict[str, str] | None = None,
         extra_query: dict[str, object] | None = None,
         timeout: float | None = None,
@@ -31,6 +32,7 @@ class Messages(SyncAPIResource):
             body: 메시지 본문.
             type: 메시지 유형. sms, mms, rcs, kakao. 기본값 sms.
             subject: 제목 (MMS 등에서 사용).
+            media_url: 첨부 미디어 URL 목록 (MMS 등에서 사용).
             extra_headers: 추가 HTTP 헤더.
             extra_query: 추가 쿼리 파라미터.
             timeout: 이 요청의 타임아웃 (초).
@@ -40,7 +42,7 @@ class Messages(SyncAPIResource):
         """
         req_body = strip_not_given({
             "To": to, "From": from_, "Body": body,
-            "Type": type, "Subject": subject,
+            "Type": type, "Subject": subject, "MediaUrl": media_url,
         })
         return self._client._post(
             f"{self._base_path}/messages", body=req_body, cast_to=Message,
@@ -113,12 +115,13 @@ class AsyncMessages(AsyncAPIResource):
     async def create(self, *, to: str, from_: str, body: str,
                      type: Literal["sms", "mms", "rcs", "kakao"] | None = None,
                      subject: str | None = None,
+                     media_url: list[str] | None = None,
                      extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
                      timeout: float | None = None) -> Message:
         """메시지를 비동기로 발송합니다. 자세한 내용은 Messages.create를 참고하세요."""
         req_body = strip_not_given({
             "To": to, "From": from_, "Body": body,
-            "Type": type, "Subject": subject,
+            "Type": type, "Subject": subject, "MediaUrl": media_url,
         })
         return await self._client._post(
             f"{self._base_path}/messages", body=req_body, cast_to=Message,

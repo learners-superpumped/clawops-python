@@ -52,6 +52,28 @@ class TestMessagesCreate:
         assert parsed["Type"] == "mms"
         assert parsed["Subject"] == "제목"
 
+    @respx.mock
+    def test_create_mms_with_media(self, messages):
+        mms_json = {
+            **MESSAGE_JSON,
+            "type": "mms",
+            "numMedia": 1,
+            "mediaUrl": ["https://example.com/image.jpg"],
+        }
+        route = respx.post(f"{BASE}{MESSAGES_PATH}").mock(
+            return_value=httpx.Response(201, json=mms_json)
+        )
+        msg = messages.create(
+            to="010", from_="070", body="사진",
+            type="mms", subject="제목",
+            media_url=["https://example.com/image.jpg"],
+        )
+        parsed = json.loads(route.calls[0].request.content)
+        assert parsed["Type"] == "mms"
+        assert parsed["MediaUrl"] == ["https://example.com/image.jpg"]
+        assert msg.num_media == 1
+        assert msg.media_url == ["https://example.com/image.jpg"]
+
 
 class TestMessagesList:
     @respx.mock

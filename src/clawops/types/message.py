@@ -30,6 +30,8 @@ class Message(BaseModel):
     to: str
     from_: str
     body: Optional[str] = None
+    num_media: int = 0
+    media_url: Optional[list[str]] = None
     direction: Literal["outbound", "inbound"]
     account_id: str
     date_created: datetime

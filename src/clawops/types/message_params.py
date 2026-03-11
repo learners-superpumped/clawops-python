@@ -25,6 +25,8 @@ class MessageCreateParams(TypedDict, total=False):
     subject: Annotated[str, PropertyInfo(alias="Subject")]
     """제목 (MMS 등에서 사용)."""
 
+    media_url: Annotated[list[str], PropertyInfo(alias="MediaUrl")]
+
 
 class MessageListParams(TypedDict, total=False):
     """메시지 목록 조회 요청 파라미터."""
