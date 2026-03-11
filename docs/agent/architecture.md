@@ -27,8 +27,8 @@ ClawOpsAgent
 │   ├── tool calls          # 등록된 함수 자동 호출
 │   └── truncation          # 인터럽트 처리
 │
-├── GeminiRealtime (콜별)   # Google Gemini Live API
-│   ├── setup/setupComplete # 세션 초기화
+├── GeminiRealtime (콜별)   # Google Gemini Live API (google-genai SDK)
+│   ├── SDK session         # google-genai SDK가 연결/프로토콜 관리
 │   ├── audio bridging      # G.711 μ-law ↔ PCM16 16kHz/24kHz 변환
 │   ├── tool calls          # 등록된 함수 자동 호출
 │   └── barge-in            # 자동 인터럽트 처리
