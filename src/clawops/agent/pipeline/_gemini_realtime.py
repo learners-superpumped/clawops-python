@@ -211,11 +211,20 @@ class GeminiRealtime:
                             "prebuiltVoiceConfig": {"voiceName": self._voice},
                         },
                     },
+                    "inputAudioTranscription": {},
+                    "outputAudioTranscription": {},
                 },
                 "realtimeInputConfig": {
                     "automaticActivityDetection": {
                         "disabled": False,
+                        "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                        "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
+                        "prefixPaddingMs": 100,
+                        "silenceDurationMs": 500,
                     },
+                },
+                "contextWindowCompression": {
+                    "slidingWindow": {},
                 },
             },
         }
