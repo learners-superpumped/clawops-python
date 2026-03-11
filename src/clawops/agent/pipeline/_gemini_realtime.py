@@ -1,18 +1,18 @@
-"""Google Gemini Live API 세션.
+"""Google Gemini Live API 세션 (google-genai SDK 기반).
 
-Session Protocol을 구현하며, Gemini Live WebSocket API를 사용한다.
+Session Protocol을 구현하며, google-genai SDK의 Live API를 사용한다.
 입력 오디오는 G.711 ulaw → PCM16 16kHz로, 출력은 PCM16 24kHz → G.711 ulaw로 변환한다.
 """
+
 from __future__ import annotations
 
 import asyncio
-import base64
-import json
 import logging
 import os
 from typing import Any
 
-import aiohttp
+from google import genai
+from google.genai import types
 
 from .._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
 from .._recorder import AudioRecorder
@@ -22,21 +22,15 @@ from ..tracing._spans import tool_call_span, llm_session_span
 
 log = logging.getLogger("clawops.agent")
 
-GEMINI_LIVE_URL = (
-    "wss://generativelanguage.googleapis.com/ws/"
-    "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
-    "?key={api_key}"
-)
-
 HANG_UP_TOOL = {
     "name": "hang_up",
     "description": "End the phone call. Use when the conversation is finished or the caller says goodbye.",
     "parameters": {"type": "object", "properties": {}},
 }
 
+
 def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any]:
     """$ref 문자열을 $defs에서 찾아 반환한다."""
-    # "#/$defs/someName" or "#/definitions/someName"
     parts = ref.lstrip("#/").split("/")
     result = defs
     for part in parts:
@@ -65,33 +59,27 @@ def _sanitize_schema_for_gemini(
     if not isinstance(schema, dict):
         return {"type": "object", "properties": {}}
 
-    # 최상위에서 $defs 추출
     if defs is None:
         defs = schema.get("$defs", schema.get("definitions", {}))
 
-    # $ref resolve
     if "$ref" in schema:
         resolved = _resolve_ref(schema["$ref"], {"$defs": defs, "definitions": defs})
         if resolved:
             return _sanitize_schema_for_gemini(resolved, defs, _depth + 1)
         return {"type": "object", "properties": {}}
 
-    # oneOf / anyOf / allOf 처리
     for combo_key in ("oneOf", "anyOf", "allOf"):
         if combo_key in schema:
             variants = schema[combo_key]
             if isinstance(variants, list) and variants:
-                # object 타입 우선 선택
                 for v in variants:
                     resolved_v = _sanitize_schema_for_gemini(v, defs, _depth + 1)
                     if resolved_v.get("type") == "object" and resolved_v.get("properties"):
                         return resolved_v
-                # 없으면 첫 번째 항목
                 return _sanitize_schema_for_gemini(variants[0], defs, _depth + 1)
 
     result: dict[str, Any] = {}
 
-    # type 처리 - 배열 type에서 null 제거
     schema_type = schema.get("type")
     if isinstance(schema_type, list):
         non_null = [t for t in schema_type if t != "null"]
@@ -100,19 +88,15 @@ def _sanitize_schema_for_gemini(
     if schema_type:
         result["type"] = schema_type
 
-    # description 유지
     if "description" in schema:
         result["description"] = schema["description"]
 
-    # enum 유지
     if "enum" in schema:
         result["enum"] = schema["enum"]
 
-    # required 유지
     if "required" in schema:
         result["required"] = schema["required"]
 
-    # properties 재귀 처리
     if "properties" in schema:
         props = {}
         for key, val in schema["properties"].items():
@@ -120,17 +104,14 @@ def _sanitize_schema_for_gemini(
                 props[key] = _sanitize_schema_for_gemini(val, defs, _depth + 1)
         result["properties"] = props
 
-    # items 재귀 처리 (array)
     if "items" in schema:
         items = schema["items"]
         if isinstance(items, dict):
             result["items"] = _sanitize_schema_for_gemini(items, defs, _depth + 1)
 
-    # type이 없고 properties가 있으면 object로 추정
     if "type" not in result and "properties" in result:
         result["type"] = "object"
 
-    # type이 object인데 properties가 없으면 빈 properties 추가
     if result.get("type") == "object" and "properties" not in result:
         result["properties"] = {}
 
@@ -138,10 +119,9 @@ def _sanitize_schema_for_gemini(
 
 
 class GeminiRealtime:
-    """Gemini Live API 기반 음성 세션.
+    """Gemini Live API 기반 음성 세션 (google-genai SDK).
 
-    Session Protocol을 구현한다. ``gemini-2.0-flash-live-001`` 등
-    Google의 realtime 모델을 사용한다.
+    Session Protocol을 구현한다.
     """
 
     def __init__(
@@ -167,8 +147,9 @@ class GeminiRealtime:
         self._tools = tool_registry or ToolRegistry()
         self._recorder = recorder
 
-        self._ws: aiohttp.ClientWebSocketResponse | None = None
-        self._http: aiohttp.ClientSession | None = None
+        self._client = genai.Client(api_key=api_key)
+        self._live_ctx: Any | None = None  # async context manager
+        self._session: Any | None = None  # AsyncLiveSession
         self._call: CallSession | None = None
         self._sent_audio_chunks: int = 0
         self._tasks: list[asyncio.Task[Any]] = []
@@ -187,131 +168,88 @@ class GeminiRealtime:
     async def start(self, call: CallSession) -> None:
         self._call = call
 
-        self._llm_span_ctx = llm_session_span(
-            self._model, system="google", voice=self._voice
-        )
+        self._llm_span_ctx = llm_session_span(self._model, system="google", voice=self._voice)
         self._llm_span = self._llm_span_ctx.__enter__()
 
-        url = GEMINI_LIVE_URL.format(api_key=self._api_key)
-
-        self._http = aiohttp.ClientSession()
-        self._ws = await self._http.ws_connect(url)
-        log.info("Gemini Live WS connected")
-
-        # ── Config 메시지 (공식 WebSocket 포맷) ──
+        # ── Config ──
         tool_schemas = self._build_tool_schemas()
 
         config: dict[str, Any] = {
-            "model": f"models/{self._model}",
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {
-                "voiceConfig": {
-                    "prebuiltVoiceConfig": {"voiceName": self._voice},
+            "response_modalities": ["AUDIO"],
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": {"voice_name": self._voice},
                 },
             },
-            "realtimeInputConfig": {
-                "automaticActivityDetection": {
-                    "disabled": False,
-                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
-                    "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
-                    "prefixPaddingMs": 100,
-                    "silenceDurationMs": 500,
-                },
-            },
-            "contextWindowCompression": {
-                "slidingWindow": {},
-            },
+            "input_audio_transcription": {},
+            "output_audio_transcription": {},
         }
 
         if self._system_prompt:
-            config["systemInstruction"] = {
-                "parts": [{"text": self._system_prompt}],
-            }
+            config["system_instruction"] = self._system_prompt
 
         if tool_schemas:
-            config["tools"] = [{"functionDeclarations": tool_schemas}]
+            config["tools"] = [{"function_declarations": tool_schemas}]
 
-        config_msg = {"config": config}
-        log.debug(f"Gemini config: model={self._model}, voice={self._voice}")
-        log.debug(f"Gemini config tool count: {len(tool_schemas)}")
-        log.debug(f"Gemini config msg: {json.dumps(config_msg, ensure_ascii=False, default=str)[:3000]}")
-        await self._send(config_msg)
+        log.debug(f"Gemini SDK config: model={self._model}, voice={self._voice}")
+        log.debug(f"Gemini SDK tool count: {len(tool_schemas)}")
 
-        # setupComplete 대기
-        await self._wait_setup_complete()
+        # SDK가 setup 메시지를 자동으로 처리
+        self._live_ctx = self._client.aio.live.connect(
+            model=self._model,
+            config=config,
+        )
+        try:
+            self._session = await self._live_ctx.__aenter__()
+        except Exception:
+            if self._llm_span_ctx:
+                import sys
+
+                self._llm_span_ctx.__exit__(*sys.exc_info())
+                self._llm_span_ctx = None
+            raise
+        log.info("Gemini Live SDK session connected")
 
         if self._greeting:
-            await self._send({
-                "clientContent": {
-                    "turns": [
-                        {
-                            "role": "user",
-                            "parts": [{"text": "인사해 주세요."}],
-                        }
-                    ],
-                    "turnComplete": True,
-                }
-            })
+            await self._session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text="인사해 주세요.")],
+                ),
+                turn_complete=True,
+            )
 
         self._tasks.append(asyncio.create_task(self._receive_loop()))
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
+        if not self._session:
+            return
+
         # G.711 ulaw 8kHz → PCM16 8kHz → PCM16 16kHz
         pcm8k = ulaw_to_pcm16(audio)
         pcm16k = resample_pcm16(pcm8k, from_rate=8000, to_rate=16000)
 
-        await self._send({
-            "realtimeInput": {
-                "audio": {
-                    "data": base64.b64encode(pcm16k).decode(),
-                    "mimeType": "audio/pcm;rate=16000",
-                },
-            },
-        })
+        if self._recorder:
+            self._recorder.write_inbound(pcm8k)
 
-    @staticmethod
-    def _parse_ws_message(msg: aiohttp.WSMessage) -> dict[str, Any] | None:
-        """TEXT 또는 BINARY WS 메시지를 JSON dict로 파싱한다."""
-        if msg.type == aiohttp.WSMsgType.TEXT:
-            return json.loads(msg.data)
-        if msg.type == aiohttp.WSMsgType.BINARY:
-            try:
-                return json.loads(msg.data)
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                return None
-        return None
+        self._sent_audio_chunks += 1
 
-    async def _wait_setup_complete(self) -> None:
-        """서버로부터 setupComplete 메시지를 대기한다."""
-        if not self._ws:
-            log.debug("Gemini setup: no WS connection")
-            return
-        log.debug("Gemini setup: waiting for setupComplete...")
-        async for msg in self._ws:
-            log.debug(f"Gemini setup raw msg: type={msg.type}, data_len={len(msg.data) if msg.data else 0}")
-            data = self._parse_ws_message(msg)
-            if data is not None:
-                log.debug(f"Gemini setup recv: {json.dumps(data, ensure_ascii=False, default=str)[:1000]}")
-                if "setupComplete" in data:
-                    log.info("Gemini Live setup complete")
-                    return
-            elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
-                log.error(f"Gemini WS closed during setup: type={msg.type}, data={msg.data}, extra={msg.extra}")
-                raise ConnectionError("Gemini Live WS closed during setup")
-        log.error("Gemini setup: WS iteration ended without setupComplete")
+        try:
+            await self._session.send_realtime_input(
+                audio=types.Blob(data=pcm16k, mime_type="audio/pcm;rate=16000"),
+            )
+        except Exception as e:
+            log.warning(f"Gemini audio send failed: {e}")
 
     async def _receive_loop(self) -> None:
-        if not self._ws:
+        if not self._session:
             return
         try:
-            async for msg in self._ws:
-                event = self._parse_ws_message(msg)
-                if event is not None:
-                    log.log(5, f"Gemini recv: {list(event.keys())}")
-                    await self._handle_event(event)
-                elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
-                    log.warning(f"Gemini WS closed: {msg.type}")
-                    break
+            # SDK의 receive()는 turn_complete 시 iterator가 종료되므로
+            # 매 턴마다 다시 호출해야 한다.
+            while self._session:
+                async for response in self._session.receive():
+                    await self._handle_response(response)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -319,68 +257,65 @@ class GeminiRealtime:
         finally:
             await self._cleanup()
 
-    async def _handle_event(self, event: dict[str, Any]) -> None:
+    async def _handle_response(self, response: Any) -> None:
         if not self._call:
             return
 
-        # ── 오디오 응답 ──
-        server_content = event.get("serverContent")
+        server_content = getattr(response, "server_content", None)
         if server_content:
-            model_turn = server_content.get("modelTurn")
+            # ── 오디오 응답 ──
+            model_turn = getattr(server_content, "model_turn", None)
             if model_turn:
-                for part in model_turn.get("parts", []):
-                    inline = part.get("inlineData")
-                    if inline and "audio" in inline.get("mimeType", ""):
-                        await self._handle_audio_data(inline["data"])
-
-                    # 텍스트 트랜스크립트
-                    text = part.get("text")
-                    if text:
-                        await self._call._emit("transcript", "assistant", text)
+                for part in getattr(model_turn, "parts", []):
+                    inline = getattr(part, "inline_data", None)
+                    if inline and "audio" in (getattr(inline, "mime_type", "") or ""):
+                        await self._handle_audio_data(inline.data)
 
             # 턴 완료
-            if server_content.get("turnComplete"):
+            if getattr(server_content, "turn_complete", False):
                 log.debug("Gemini turn complete")
                 await self._flush_audio_remainder()
 
             # barge-in (인터럽트)
-            if server_content.get("interrupted"):
+            if getattr(server_content, "interrupted", False):
                 log.info("Gemini: barge-in detected")
-                if self._call:
-                    await self._call.clear_audio()
+                await self._call.clear_audio()
                 self._sent_audio_chunks = 0
                 self._audio_remainder = b""
 
-        # ── 입력 트랜스크립트 (서버 최상위 필드) ──
-        input_transcription = event.get("inputTranscription")
-        if input_transcription:
-            text = input_transcription.get("text", "")
-            if text:
-                await self._call._emit("transcript", "user", text)
+            # ── 입력 트랜스크립트 ──
+            input_transcription = getattr(server_content, "input_transcription", None)
+            if input_transcription:
+                text = getattr(input_transcription, "text", "")
+                if text:
+                    log.info(f"[TRANSCRIPT-USER] {text}")
+                    await self._call._emit("transcript", "user", text)
 
-        # ── 출력 트랜스크립트 (서버 최상위 필드) ──
-        output_transcription = event.get("outputTranscription")
-        if output_transcription:
-            text = output_transcription.get("text", "")
-            if text:
-                await self._call._emit("transcript", "assistant", text)
+            # ── 출력 트랜스크립트 ──
+            output_transcription = getattr(server_content, "output_transcription", None)
+            if output_transcription:
+                text = getattr(output_transcription, "text", "")
+                if text:
+                    log.info(f"[TRANSCRIPT-ASSISTANT] {text}")
+                    await self._call._emit("transcript", "assistant", text)
 
         # ── Tool call ──
-        tool_call = event.get("toolCall")
+        tool_call = getattr(response, "tool_call", None)
         if tool_call:
             await self._handle_tool_calls(tool_call)
 
-        # ── Tool call cancellation (barge-in 시) ──
-        tool_cancellation = event.get("toolCallCancellation")
+        # ── Tool call cancellation ──
+        tool_cancellation = getattr(response, "tool_call_cancellation", None)
         if tool_cancellation:
-            log.info(f"Gemini tool call cancelled: {tool_cancellation.get('ids', [])}")
+            ids = getattr(tool_cancellation, "ids", [])
+            log.info(f"Gemini tool call cancelled: {ids}")
 
-    async def _handle_audio_data(self, b64_data: str) -> None:
-        """PCM16 24kHz → G.711 ulaw 8kHz 변환 후 전송."""
+    async def _handle_audio_data(self, audio_data: bytes) -> None:
+        """PCM16 24kHz raw bytes → G.711 ulaw 8kHz 변환 후 전송."""
         if not self._call:
             return
 
-        pcm24k = base64.b64decode(b64_data)
+        pcm24k = audio_data
         if self._recorder:
             self._recorder.write_outbound(resample_pcm16(pcm24k, from_rate=24000, to_rate=8000))
 
@@ -394,25 +329,23 @@ class GeminiRealtime:
         full_end = (len(ulaw) // chunk_size) * chunk_size
         for off in range(0, full_end, chunk_size):
             await self._call.send_audio(ulaw[off : off + chunk_size])
-            self._sent_audio_chunks += 1
         self._audio_remainder = ulaw[full_end:]
 
     async def _flush_audio_remainder(self) -> None:
         """잔여 오디오를 silence 패딩하여 flush."""
         if self._audio_remainder and self._call:
-            padded = self._audio_remainder + b'\xff' * (160 - len(self._audio_remainder))
+            padded = self._audio_remainder + b"\xff" * (160 - len(self._audio_remainder))
             await self._call.send_audio(padded)
-            self._sent_audio_chunks += 1
             self._audio_remainder = b""
 
-    async def _handle_tool_calls(self, tool_call: dict[str, Any]) -> None:
-        function_calls = tool_call.get("functionCalls", [])
-        responses: list[dict[str, Any]] = []
+    async def _handle_tool_calls(self, tool_call: Any) -> None:
+        function_calls = getattr(tool_call, "function_calls", [])
+        responses: list[types.LiveFunctionResponse] = []
 
         for fc in function_calls:
-            func_name = fc.get("name", "")
-            fc_id = fc.get("id", "")
-            args = fc.get("args", {})
+            func_name = getattr(fc, "name", "")
+            fc_id = getattr(fc, "id", "")
+            args = getattr(fc, "args", {})
             log.info(f"Tool call: {func_name}({args})")
 
             if func_name == "hang_up":
@@ -428,16 +361,18 @@ class GeminiRealtime:
                     log.error(f"Tool call failed: {func_name}: {e}")
                     result = f"Error: {e}"
 
-            responses.append({
-                "id": fc_id,
-                "name": func_name,
-                "response": {"result": str(result)},
-            })
+            responses.append(
+                types.LiveFunctionResponse(
+                    id=fc_id,
+                    name=func_name,
+                    response={"result": str(result)},
+                )
+            )
 
         if responses:
-            await self._send({
-                "toolResponse": {"functionResponses": responses},
-            })
+            await self._session.send_tool_response(
+                function_responses=responses,
+            )
 
     def _build_tool_schemas(self) -> list[dict[str, Any]]:
         """ToolRegistry의 스키마를 Gemini functionDeclarations 형식으로 변환."""
@@ -446,24 +381,15 @@ class GeminiRealtime:
         for tool in openai_tools:
             params = tool.get("parameters", {"type": "object", "properties": {}})
             params = _sanitize_schema_for_gemini(params)
-            declarations.append({
-                "name": tool["name"],
-                "description": tool.get("description", ""),
-                "parameters": params,
-            })
+            declarations.append(
+                {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": params,
+                }
+            )
         declarations.append(HANG_UP_TOOL)
         return declarations
-
-    async def _send(self, data: dict[str, Any]) -> None:
-        if self._ws and not self._ws.closed:
-            try:
-                payload = json.dumps(data)
-                log.log(5, f"Gemini WS send: {list(data.keys())} ({len(payload)} bytes)")
-                await self._ws.send_str(payload)
-            except Exception as e:
-                log.error(f"Gemini WS send failed: {e}")
-        else:
-            log.error(f"Gemini WS send skipped: ws={'exists' if self._ws else 'None'}, closed={self._ws.closed if self._ws else 'N/A'}")
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -473,14 +399,16 @@ class GeminiRealtime:
         await self._cleanup()
 
     async def _cleanup(self) -> None:
-        if self._ws and not self._ws.closed:
-            await self._ws.close()
-        self._ws = None
-        if self._http:
-            await self._http.close()
-        self._http = None
+        if self._live_ctx:
+            try:
+                await self._live_ctx.__aexit__(None, None, None)
+            except Exception as e:
+                log.debug(f"Gemini SDK cleanup: {e}")
+            self._live_ctx = None
+            self._session = None
         if self._llm_span_ctx:
             import sys
+
             exc_info = sys.exc_info()
             self._llm_span_ctx.__exit__(*exc_info)
             self._llm_span_ctx = None

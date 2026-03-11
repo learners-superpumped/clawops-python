@@ -1,5 +1,4 @@
 # tests/agent/test_gemini_realtime.py
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -36,85 +35,84 @@ def test_gemini_realtime_tool_schemas():
 
 
 @pytest.mark.asyncio
-async def test_gemini_config_message_structure():
-    """Config 메시지가 공식 WebSocket 포맷을 따르는지 검증."""
+async def test_gemini_sdk_start_connects():
+    """SDK의 live.connect가 올바른 config로 호출되는지 검증."""
     session = GeminiRealtime(
         api_key="AIza-test",
         system_prompt="Test prompt",
         voice="Kore",
     )
 
-    sent_messages: list[str] = []
+    mock_live_session = AsyncMock()
+    mock_live_session.receive = AsyncMock(return_value=AsyncMock(
+        __aiter__=lambda self: self,
+        __anext__=AsyncMock(side_effect=StopAsyncIteration),
+    ))
+    mock_live_session.send_client_content = AsyncMock()
 
-    async def capture_send(data: str):
-        sent_messages.append(data)
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_live_session)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    mock_ws = AsyncMock()
-    mock_ws.closed = False
-    mock_ws.send_str = capture_send
+    captured_kwargs: dict = {}
 
-    mock_http = AsyncMock()
-    mock_http.ws_connect = AsyncMock(return_value=mock_ws)
+    def capture_connect(**kwargs):
+        captured_kwargs.update(kwargs)
+        return mock_ctx
 
-    with patch("aiohttp.ClientSession", return_value=mock_http), \
-         patch.object(session, "_wait_setup_complete", new_callable=AsyncMock), \
-         patch.object(session, "_receive_loop", new_callable=AsyncMock):
-        mock_call = MagicMock()
-        mock_call._emit = AsyncMock()
-        await session.start(mock_call)
+    session._client = MagicMock()
+    session._client.aio.live.connect = capture_connect
 
-    # 첫 번째 메시지가 config (setup이 아님)
-    assert len(sent_messages) >= 1
-    msg = json.loads(sent_messages[0])
-    assert "config" in msg, "Top-level key must be 'config', not 'setup'"
-    config = msg["config"]
+    mock_call = MagicMock()
+    mock_call._emit = AsyncMock()
 
-    # responseModalities는 config 직속 (generationConfig 아님)
-    assert config["responseModalities"] == ["AUDIO"]
+    await session.start(mock_call)
 
-    # speechConfig도 config 직속
-    assert config["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Kore"
+    # SDK connect 호출 확인
+    assert "model" in captured_kwargs
+    assert captured_kwargs["model"] == "gemini-2.5-flash-native-audio-preview-12-2025"
 
-    # systemInstruction도 config 직속
-    assert config["systemInstruction"]["parts"][0]["text"] == "Test prompt"
+    config = captured_kwargs["config"]
 
-    # VAD 세부 설정
-    vad = config["realtimeInputConfig"]["automaticActivityDetection"]
-    assert vad["disabled"] is False
-    assert vad["startOfSpeechSensitivity"] == "START_SENSITIVITY_HIGH"
-    assert vad["endOfSpeechSensitivity"] == "END_SENSITIVITY_LOW"
-    assert vad["prefixPaddingMs"] == 100
-    assert vad["silenceDurationMs"] == 500
+    # 핵심 config 확인
+    assert config["response_modalities"] == ["AUDIO"]
+    assert config["speech_config"]["voice_config"]["prebuilt_voice_config"]["voice_name"] == "Kore"
+    assert config["system_instruction"] == "Test prompt"
 
-    # Context window compression
-    assert "contextWindowCompression" in config
-    assert "slidingWindow" in config["contextWindowCompression"]
+    # Transcription (Stage 2)
+    assert "input_audio_transcription" in config
+    assert "output_audio_transcription" in config
+
+    # Stage 3 필드가 포함되지 않았는지 확인
+    assert "context_window_compression" not in config
+    assert "realtime_input_config" not in config
+
+    # 인사 메시지 전송 확인
+    mock_live_session.send_client_content.assert_called_once()
+
+    # cleanup
+    await session.stop()
 
 
 @pytest.mark.asyncio
-async def test_gemini_audio_input_format():
-    """오디오 입력이 공식 WebSocket 포맷(audio 키)을 사용하는지 검증."""
+async def test_gemini_sdk_feed_audio():
+    """SDK의 send_realtime_input으로 오디오가 전송되는지 검증."""
     session = GeminiRealtime(api_key="AIza-test")
 
-    sent_messages: list[str] = []
-
-    async def capture_send(data: str):
-        sent_messages.append(data)
-
-    mock_ws = AsyncMock()
-    mock_ws.closed = False
-    mock_ws.send_str = capture_send
-    session._ws = mock_ws
+    mock_live_session = AsyncMock()
+    mock_live_session.send_realtime_input = AsyncMock()
+    session._session = mock_live_session
     session._call = MagicMock()
 
-    # G.711 ulaw 160 bytes (20ms at 8kHz)
+    # G.711 ulaw 160 bytes (20ms at 8kHz, silence)
     ulaw_chunk = b'\xff' * 160
     await session.feed_audio(ulaw_chunk, timestamp=0)
 
-    assert len(sent_messages) == 1
-    msg = json.loads(sent_messages[0])
-    audio = msg["realtimeInput"]["audio"]
-    assert "data" in audio
-    assert audio["mimeType"] == "audio/pcm;rate=16000"
-    # mediaChunks가 아닌 audio 키를 사용해야 함
-    assert "mediaChunks" not in msg["realtimeInput"]
+    # SDK send_realtime_input 호출 확인
+    mock_live_session.send_realtime_input.assert_called_once()
+    call_kwargs = mock_live_session.send_realtime_input.call_args
+    blob = call_kwargs.kwargs.get("audio") or call_kwargs.args[0]
+    assert blob.mime_type == "audio/pcm;rate=16000"
+    assert isinstance(blob.data, bytes)
+    # PCM16 16kHz: 160 ulaw samples → 160 PCM16 samples → 320 PCM16 16kHz samples = 640 bytes
+    assert len(blob.data) == 640
