@@ -11,8 +11,15 @@ import logging
 import os
 from typing import Any
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+
+    _HAS_GENAI = True
+except ImportError:
+    genai = None  # type: ignore[assignment]
+    types = None  # type: ignore[assignment]
+    _HAS_GENAI = False
 
 from .._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
 from .._recorder import AudioRecorder
@@ -136,6 +143,11 @@ class GeminiRealtime:
         tool_registry: ToolRegistry | None = None,
         recorder: AudioRecorder | None = None,
     ) -> None:
+        if not _HAS_GENAI:
+            raise ImportError(
+                "google-genai is required for GeminiRealtime. "
+                "Install it with: pip install clawops[gemini-llm]"
+            )
         if api_key is None:
             api_key = os.environ.get("GOOGLE_API_KEY", "")
         self._api_key = api_key
