@@ -34,6 +34,108 @@ HANG_UP_TOOL = {
     "parameters": {"type": "object", "properties": {}},
 }
 
+def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any]:
+    """$ref 문자열을 $defs에서 찾아 반환한다."""
+    # "#/$defs/someName" or "#/definitions/someName"
+    parts = ref.lstrip("#/").split("/")
+    result = defs
+    for part in parts:
+        if isinstance(result, dict):
+            result = result.get(part, {})
+        else:
+            return {}
+    return result if isinstance(result, dict) else {}
+
+
+def _sanitize_schema_for_gemini(
+    schema: dict[str, Any],
+    defs: dict[str, Any] | None = None,
+    _depth: int = 0,
+) -> dict[str, Any]:
+    """JSON Schema를 Gemini functionDeclarations 호환 형식으로 변환한다.
+
+    - $ref를 인라인으로 resolve
+    - oneOf/anyOf/allOf를 단순화 (첫 번째 object 타입 또는 첫 번째 항목 사용)
+    - 지원되지 않는 키워드 제거
+    - 재귀 깊이 제한으로 순환 참조 방지
+    """
+    if _depth > 15:
+        return {"type": "object", "properties": {}}
+
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}}
+
+    # 최상위에서 $defs 추출
+    if defs is None:
+        defs = schema.get("$defs", schema.get("definitions", {}))
+
+    # $ref resolve
+    if "$ref" in schema:
+        resolved = _resolve_ref(schema["$ref"], {"$defs": defs, "definitions": defs})
+        if resolved:
+            return _sanitize_schema_for_gemini(resolved, defs, _depth + 1)
+        return {"type": "object", "properties": {}}
+
+    # oneOf / anyOf / allOf 처리
+    for combo_key in ("oneOf", "anyOf", "allOf"):
+        if combo_key in schema:
+            variants = schema[combo_key]
+            if isinstance(variants, list) and variants:
+                # object 타입 우선 선택
+                for v in variants:
+                    resolved_v = _sanitize_schema_for_gemini(v, defs, _depth + 1)
+                    if resolved_v.get("type") == "object" and resolved_v.get("properties"):
+                        return resolved_v
+                # 없으면 첫 번째 항목
+                return _sanitize_schema_for_gemini(variants[0], defs, _depth + 1)
+
+    result: dict[str, Any] = {}
+
+    # type 처리 - 배열 type에서 null 제거
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        non_null = [t for t in schema_type if t != "null"]
+        schema_type = non_null[0] if non_null else "string"
+
+    if schema_type:
+        result["type"] = schema_type
+
+    # description 유지
+    if "description" in schema:
+        result["description"] = schema["description"]
+
+    # enum 유지
+    if "enum" in schema:
+        result["enum"] = schema["enum"]
+
+    # required 유지
+    if "required" in schema:
+        result["required"] = schema["required"]
+
+    # properties 재귀 처리
+    if "properties" in schema:
+        props = {}
+        for key, val in schema["properties"].items():
+            if isinstance(val, dict):
+                props[key] = _sanitize_schema_for_gemini(val, defs, _depth + 1)
+        result["properties"] = props
+
+    # items 재귀 처리 (array)
+    if "items" in schema:
+        items = schema["items"]
+        if isinstance(items, dict):
+            result["items"] = _sanitize_schema_for_gemini(items, defs, _depth + 1)
+
+    # type이 없고 properties가 있으면 object로 추정
+    if "type" not in result and "properties" in result:
+        result["type"] = "object"
+
+    # type이 object인데 properties가 없으면 빈 properties 추가
+    if result.get("type") == "object" and "properties" not in result:
+        result["properties"] = {}
+
+    return result
+
 
 class GeminiRealtime:
     """Gemini Live API 기반 음성 세션.
@@ -127,6 +229,8 @@ class GeminiRealtime:
             setup_msg["setup"]["tools"] = [{"functionDeclarations": tool_schemas}]
 
         log.debug(f"Gemini setup: model={self._model}, voice={self._voice}")
+        log.debug(f"Gemini setup tool count: {len(tool_schemas)}")
+        log.debug(f"Gemini setup msg: {json.dumps(setup_msg, ensure_ascii=False, default=str)[:3000]}")
         await self._send(setup_msg)
 
         # setupComplete 대기
@@ -176,17 +280,21 @@ class GeminiRealtime:
     async def _wait_setup_complete(self) -> None:
         """서버로부터 setupComplete 메시지를 대기한다."""
         if not self._ws:
+            log.debug("Gemini setup: no WS connection")
             return
+        log.debug("Gemini setup: waiting for setupComplete...")
         async for msg in self._ws:
+            log.debug(f"Gemini setup raw msg: type={msg.type}, data_len={len(msg.data) if msg.data else 0}")
             data = self._parse_ws_message(msg)
             if data is not None:
-                log.debug(f"Gemini setup recv: {list(data.keys())}")
+                log.debug(f"Gemini setup recv: {json.dumps(data, ensure_ascii=False, default=str)[:1000]}")
                 if "setupComplete" in data:
                     log.info("Gemini Live setup complete")
                     return
             elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
-                log.error(f"Gemini WS closed during setup: {msg.type}")
+                log.error(f"Gemini WS closed during setup: type={msg.type}, data={msg.data}, extra={msg.extra}")
                 raise ConnectionError("Gemini Live WS closed during setup")
+        log.error("Gemini setup: WS iteration ended without setupComplete")
 
     async def _receive_loop(self) -> None:
         if not self._ws:
@@ -332,10 +440,12 @@ class GeminiRealtime:
         openai_tools = self._tools.to_openai_tools()
         declarations = []
         for tool in openai_tools:
+            params = tool.get("parameters", {"type": "object", "properties": {}})
+            params = _sanitize_schema_for_gemini(params)
             declarations.append({
                 "name": tool["name"],
                 "description": tool.get("description", ""),
-                "parameters": tool.get("parameters", {"type": "object", "properties": {}}),
+                "parameters": params,
             })
         declarations.append(HANG_UP_TOOL)
         return declarations
@@ -343,9 +453,13 @@ class GeminiRealtime:
     async def _send(self, data: dict[str, Any]) -> None:
         if self._ws and not self._ws.closed:
             try:
-                await self._ws.send_str(json.dumps(data))
+                payload = json.dumps(data)
+                log.debug(f"Gemini WS send: {list(data.keys())} ({len(payload)} bytes)")
+                await self._ws.send_str(payload)
             except Exception as e:
                 log.error(f"Gemini WS send failed: {e}")
+        else:
+            log.error(f"Gemini WS send skipped: ws={'exists' if self._ws else 'None'}, closed={self._ws.closed if self._ws else 'N/A'}")
 
     async def stop(self) -> None:
         for task in self._tasks:
