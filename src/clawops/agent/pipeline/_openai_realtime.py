@@ -14,6 +14,7 @@ from typing import Any
 
 import aiohttp
 
+from .._audio import ulaw_to_pcm16
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -199,7 +200,7 @@ class OpenAIRealtime:
                 )
                 self._diag_last_delta_time = now
             if self._recorder:
-                self._recorder.write_raw_outbound(ulaw)
+                self._recorder.write_outbound(ulaw_to_pcm16(ulaw))
             # 잔여 바이트와 합쳐서 항상 160B(20ms) 정렬된 프레임만 전송
             ulaw = self._audio_remainder + ulaw
             chunk_size = 160  # 160B = 20ms at 8kHz ulaw

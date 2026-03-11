@@ -270,7 +270,7 @@ class GeminiRealtime:
 
         pcm24k = base64.b64decode(b64_data)
         if self._recorder:
-            self._recorder.write_raw_outbound(pcm24k)
+            self._recorder.write_outbound(resample_pcm16(pcm24k, from_rate=24000, to_rate=8000))
 
         # PCM16 24kHz → PCM16 8kHz → ulaw
         pcm8k = resample_pcm16(pcm24k, from_rate=24000, to_rate=8000)

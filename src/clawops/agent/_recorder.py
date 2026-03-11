@@ -1,104 +1,189 @@
-"""AudioRecorder: per-call 실시간 녹음.
+"""3-file call recording: in.wav, out.wav, mix.wav.
 
-2개 파일을 동시에 실시간 기록:
-- {call_id}_in.wav  — 발신자 음성 (수신, PCM16 8kHz mono)
-- {call_id}_raw.ulaw — AI 음성 (송신, OpenAI 원본 G.711 ulaw)
-
-수신 오디오가 타임라인 역할을 하므로 별도 시간 관리 불필요.
+Wall-clock 동기화로 실시간 녹음. 세 파일 모두 동일한 길이로 유지된다.
+recordings/{call_id}/in.wav   — 상대방 음성 (PCM16 8kHz mono)
+recordings/{call_id}/out.wav  — AI 음성 (PCM16 8kHz mono)
+recordings/{call_id}/mix.wav  — 양쪽 믹싱 (PCM16 8kHz mono)
 """
 from __future__ import annotations
 
+import logging
 import os
 import struct
-import logging
-from pathlib import Path
+import time
 
-log = logging.getLogger("clawops.agent")
+log = logging.getLogger(__name__)
 
-WAV_SAMPLE_RATE = 8000
-WAV_CHANNELS = 1
-WAV_BITS_PER_SAMPLE = 16
-WAV_HEADER_SIZE = 44
+SAMPLE_RATE = 8000
+CHANNELS = 1
+BITS_PER_SAMPLE = 16
+BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE // 8)  # 16000
 
 
 def _wav_header(data_size: int = 0) -> bytes:
-    """PCM16 8kHz mono WAV 헤더 생성."""
-    byte_rate = WAV_SAMPLE_RATE * WAV_CHANNELS * WAV_BITS_PER_SAMPLE // 8
-    block_align = WAV_CHANNELS * WAV_BITS_PER_SAMPLE // 8
+    """44-byte PCM WAV header."""
+    byte_rate = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE // 8)
+    block_align = CHANNELS * (BITS_PER_SAMPLE // 8)
     return struct.pack(
         "<4sI4s4sIHHIIHH4sI",
         b"RIFF",
-        36 + data_size,         # file size - 8
+        36 + data_size,
         b"WAVE",
         b"fmt ",
-        16,                     # fmt chunk size
-        1,                      # PCM
-        WAV_CHANNELS,
-        WAV_SAMPLE_RATE,
+        16,
+        1,  # PCM
+        CHANNELS,
+        SAMPLE_RATE,
         byte_rate,
         block_align,
-        WAV_BITS_PER_SAMPLE,
+        BITS_PER_SAMPLE,
         b"data",
         data_size,
     )
 
 
+def _mix_samples(a: bytes, b: bytes) -> bytes:
+    """두 PCM16 버퍼를 sample-level 합산 (clipping 적용)."""
+    n = min(len(a), len(b)) // 2
+    samples_a = struct.unpack(f"<{n}h", a[: n * 2])
+    samples_b = struct.unpack(f"<{n}h", b[: n * 2])
+    mixed = struct.pack(
+        f"<{n}h",
+        *(max(-32768, min(32767, sa + sb)) for sa, sb in zip(samples_a, samples_b)),
+    )
+    return mixed
+
+
 class AudioRecorder:
-    """실시간 양방향 녹음기.
+    """Wall-clock 동기화 3-file WAV recorder."""
 
-    사용법:
-        recorder = AudioRecorder("./recordings", "CA_abc123")
-        recorder.start()
-        recorder.write_inbound(pcm16)        # 수신 오디오마다 호출
-        recorder.write_raw_outbound(ulaw)     # 송신 오디오마다 호출
-        recorder.stop()                       # 통화 종료 시 WAV 헤더 업데이트
-    """
-
-    def __init__(self, path: str | Path, call_id: str) -> None:
-        self._dir = Path(path)
-        self._call_id = call_id
-        self._in_file = None
-        self._raw_file = None
-        self._in_size = 0
+    def __init__(self, path: str, call_id: str) -> None:
+        self._dir = os.path.join(path, call_id)
+        self._f_in = None
+        self._f_out = None
+        self._f_mix = None
+        self._in_written = 0
+        self._out_written = 0
+        self._mix_written = 0
+        self._start_time: float = 0.0
         self._started = False
 
     def start(self) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        base = self._dir / self._call_id
-
-        self._in_file = open(f"{base}_in.wav", "wb")
-        self._raw_file = open(f"{base}_raw.ulaw", "wb")
-
-        self._in_file.write(_wav_header(0))
-
+        os.makedirs(self._dir, exist_ok=True)
+        header = _wav_header()
+        self._f_in = open(os.path.join(self._dir, "in.wav"), "w+b")
+        self._f_out = open(os.path.join(self._dir, "out.wav"), "w+b")
+        self._f_mix = open(os.path.join(self._dir, "mix.wav"), "w+b")
+        self._f_in.write(header)
+        self._f_out.write(header)
+        self._f_mix.write(header)
+        self._f_in.flush()
+        self._f_out.flush()
+        self._f_mix.flush()
+        self._start_time = time.monotonic()
         self._started = True
-        log.info(f"Recording started: {base}_in.wav, {base}_raw.ulaw")
+        log.info("Recording started: %s", self._dir)
 
-    def write_inbound(self, pcm16: bytes) -> None:
-        """수신 오디오 기록 (PCM16)."""
-        if not self._started:
-            return
-        self._in_file.write(pcm16)
-        self._in_size += len(pcm16)
+    def _expected_bytes(self) -> int:
+        elapsed = time.monotonic() - self._start_time
+        return int(elapsed * BYTES_PER_SECOND)
 
-    def write_raw_outbound(self, data: bytes) -> None:
-        """OpenAI 원본 ulaw 바이트를 그대로 기록."""
-        if not self._started or not self._raw_file:
+    def _pad_silence(self, f, written: int) -> int:
+        expected = self._expected_bytes()
+        gap = expected - written
+        if gap <= 0:
+            return 0
+        gap = gap - (gap % 2)  # 2-byte align
+        if gap > 0:
+            f.write(b"\x00" * gap)
+        return gap
+
+    def _write_to_mix(self, data: bytes, track_pos: int) -> None:
+        if not self._f_mix:
             return
-        self._raw_file.write(data)
+        mix_data_pos = track_pos
+        file_pos = 44 + mix_data_pos
+
+        if mix_data_pos < self._mix_written:
+            # Overlap: read existing, mix, write back
+            overlap = min(len(data), self._mix_written - mix_data_pos)
+            self._f_mix.seek(file_pos)
+            existing = self._f_mix.read(overlap)
+            mixed = _mix_samples(existing, data[:overlap])
+            self._f_mix.seek(file_pos)
+            self._f_mix.write(mixed)
+            if len(data) > overlap:
+                self._f_mix.write(data[overlap:])
+                self._mix_written = mix_data_pos + len(data)
+        else:
+            if mix_data_pos > self._mix_written:
+                gap = mix_data_pos - self._mix_written
+                gap = gap - (gap % 2)  # 2-byte align
+                if gap > 0:
+                    self._f_mix.seek(44 + self._mix_written)
+                    self._f_mix.write(b"\x00" * gap)
+                    self._mix_written += gap
+            self._f_mix.seek(44 + self._mix_written)
+            self._f_mix.write(data)
+            self._mix_written += len(data)
+
+    def write_inbound(self, pcm16_8k: bytes) -> None:
+        if not self._started or not self._f_in:
+            return
+        try:
+            gap = self._pad_silence(self._f_in, self._in_written)
+            self._in_written += gap
+            pos_before = self._in_written
+            self._f_in.write(pcm16_8k)
+            self._in_written += len(pcm16_8k)
+            self._write_to_mix(pcm16_8k, pos_before)
+        except Exception:
+            log.exception("Error writing inbound audio")
+
+    def write_outbound(self, pcm16_8k: bytes) -> None:
+        if not self._started or not self._f_out:
+            return
+        try:
+            gap = self._pad_silence(self._f_out, self._out_written)
+            self._out_written += gap
+            pos_before = self._out_written
+            self._f_out.write(pcm16_8k)
+            self._out_written += len(pcm16_8k)
+            self._write_to_mix(pcm16_8k, pos_before)
+        except Exception:
+            log.exception("Error writing outbound audio")
 
     def stop(self) -> None:
-        """녹음 종료. WAV 헤더를 최종 크기로 업데이트."""
         if not self._started:
             return
-        self._started = False
+        try:
+            max_written = max(self._in_written, self._out_written, self._mix_written)
+            max_written = max_written & ~1  # 2-byte align (round down)
 
-        if self._raw_file and not self._raw_file.closed:
-            self._raw_file.close()
+            for f, written in [
+                (self._f_in, self._in_written),
+                (self._f_out, self._out_written),
+                (self._f_mix, self._mix_written),
+            ]:
+                if f is None:
+                    continue
+                pad = max_written - written
+                if pad > 0:
+                    f.seek(44 + written)
+                    f.write(b"\x00" * pad)
+                f.seek(0)
+                f.write(_wav_header(max_written))
+                f.close()
 
-        if self._in_file and not self._in_file.closed:
-            self._in_file.seek(0)
-            self._in_file.write(_wav_header(self._in_size))
-            self._in_file.close()
-
-        log.info(f"Recording stopped: {self._call_id} (in={self._in_size}B)")
+            log.info(
+                "Recording stopped: %s (%.1fs)",
+                self._dir,
+                max_written / BYTES_PER_SECOND if BYTES_PER_SECOND else 0,
+            )
+        except Exception:
+            log.exception("Error stopping recorder")
+        finally:
+            self._f_in = None
+            self._f_out = None
+            self._f_mix = None
+            self._started = False
