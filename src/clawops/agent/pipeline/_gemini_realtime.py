@@ -198,49 +198,44 @@ class GeminiRealtime:
         self._ws = await self._http.ws_connect(url)
         log.info("Gemini Live WS connected")
 
-        # ── Setup 메시지 ──
+        # ── Config 메시지 (공식 WebSocket 포맷) ──
         tool_schemas = self._build_tool_schemas()
 
-        setup_msg: dict[str, Any] = {
-            "setup": {
-                "model": f"models/{self._model}",
-                "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "speechConfig": {
-                        "voiceConfig": {
-                            "prebuiltVoiceConfig": {"voiceName": self._voice},
-                        },
-                    },
-                    "inputAudioTranscription": {},
-                    "outputAudioTranscription": {},
+        config: dict[str, Any] = {
+            "model": f"models/{self._model}",
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {
+                "voiceConfig": {
+                    "prebuiltVoiceConfig": {"voiceName": self._voice},
                 },
-                "realtimeInputConfig": {
-                    "automaticActivityDetection": {
-                        "disabled": False,
-                        "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
-                        "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
-                        "prefixPaddingMs": 100,
-                        "silenceDurationMs": 500,
-                    },
+            },
+            "realtimeInputConfig": {
+                "automaticActivityDetection": {
+                    "disabled": False,
+                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                    "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
+                    "prefixPaddingMs": 100,
+                    "silenceDurationMs": 500,
                 },
-                "contextWindowCompression": {
-                    "slidingWindow": {},
-                },
+            },
+            "contextWindowCompression": {
+                "slidingWindow": {},
             },
         }
 
         if self._system_prompt:
-            setup_msg["setup"]["systemInstruction"] = {
+            config["systemInstruction"] = {
                 "parts": [{"text": self._system_prompt}],
             }
 
         if tool_schemas:
-            setup_msg["setup"]["tools"] = [{"functionDeclarations": tool_schemas}]
+            config["tools"] = [{"functionDeclarations": tool_schemas}]
 
-        log.debug(f"Gemini setup: model={self._model}, voice={self._voice}")
-        log.debug(f"Gemini setup tool count: {len(tool_schemas)}")
-        log.debug(f"Gemini setup msg: {json.dumps(setup_msg, ensure_ascii=False, default=str)[:3000]}")
-        await self._send(setup_msg)
+        config_msg = {"config": config}
+        log.debug(f"Gemini config: model={self._model}, voice={self._voice}")
+        log.debug(f"Gemini config tool count: {len(tool_schemas)}")
+        log.debug(f"Gemini config msg: {json.dumps(config_msg, ensure_ascii=False, default=str)[:3000]}")
+        await self._send(config_msg)
 
         # setupComplete 대기
         await self._wait_setup_complete()
@@ -267,10 +262,10 @@ class GeminiRealtime:
 
         await self._send({
             "realtimeInput": {
-                "mediaChunks": [{
-                    "mimeType": "audio/pcm;rate=16000",
+                "audio": {
                     "data": base64.b64encode(pcm16k).decode(),
-                }],
+                    "mimeType": "audio/pcm;rate=16000",
+                },
             },
         })
 
