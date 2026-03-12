@@ -35,6 +35,32 @@ HANG_UP_TOOL = {
     "parameters": {"type": "object", "properties": {}},
 }
 
+COLLECT_DTMF_TOOL = {
+    "name": "collect_dtmf",
+    "description": "사용자로부터 DTMF(전화 키패드) 입력을 수집합니다. 반드시 사용자에게 무엇을 입력해야 하는지 안내한 후 호출하세요.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "max_digits": {"type": "integer", "description": "수집할 최대 자릿수"},
+            "finish_on_key": {"type": "string", "description": "입력 종료 키 (기본: #)"},
+            "timeout": {"type": "integer", "description": "입력 대기 시간(초, 기본: 5)"},
+        },
+        "required": ["max_digits"],
+    },
+}
+
+SEND_DTMF_TOOL = {
+    "name": "send_dtmf",
+    "description": "DTMF 신호를 전송합니다. ARS 메뉴 탐색이나 내선번호 입력 시 사용합니다.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "digits": {"type": "string", "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기."},
+        },
+        "required": ["digits"],
+    },
+}
+
 
 def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any]:
     """$ref 문자열을 $defs에서 찾아 반환한다."""
@@ -157,6 +183,7 @@ class GeminiRealtime:
         self._language = language
         self._greeting = greeting
         self._tools = tool_registry or ToolRegistry()
+        self._dtmf_tools: bool = True
         self._recorder = recorder
 
         self._client = genai.Client(api_key=api_key)
@@ -172,6 +199,10 @@ class GeminiRealtime:
     def set_tool_registry(self, registry: ToolRegistry) -> None:
         """콜별로 fork된 ToolRegistry를 주입한다."""
         self._tools = registry
+
+    def set_dtmf_tools(self, enabled: bool) -> None:
+        """DTMF tool 등록 여부를 설정한다."""
+        self._dtmf_tools = enabled
 
     def set_recorder(self, recorder: AudioRecorder) -> None:
         """콜별로 생성된 AudioRecorder를 주입한다."""
@@ -255,7 +286,15 @@ class GeminiRealtime:
 
     async def feed_dtmf(self, digits: str) -> None:
         """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
-        pass
+        if self._session:
+            from google.genai import types
+            await self._session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text=f"[DTMF 입력: {digits}]")],
+                ),
+                turn_complete=True,
+            )
 
     async def _receive_loop(self) -> None:
         if not self._session:
@@ -369,6 +408,42 @@ class GeminiRealtime:
                     await self._call.hangup()
                 return
 
+            elif func_name == "collect_dtmf":
+                if self._call:
+                    try:
+                        result = await self._call.collect_dtmf(
+                            max_digits=args.get("max_digits", 4),
+                            finish_on_key=args.get("finish_on_key", "#"),
+                            timeout=args.get("timeout", 5),
+                        )
+                        dtmf_output = result if result else "(타임아웃 - 입력 없음)"
+                    except Exception as e:
+                        dtmf_output = f"Error: {e}"
+                    responses.append(
+                        types.LiveFunctionResponse(
+                            id=fc_id,
+                            name=func_name,
+                            response={"result": dtmf_output},
+                        )
+                    )
+                continue
+
+            elif func_name == "send_dtmf":
+                if self._call:
+                    try:
+                        await self._call.send_dtmf_sequence(args.get("digits", ""))
+                        dtmf_output = "sent"
+                    except Exception as e:
+                        dtmf_output = f"Error: {e}"
+                    responses.append(
+                        types.LiveFunctionResponse(
+                            id=fc_id,
+                            name=func_name,
+                            response={"result": dtmf_output},
+                        )
+                    )
+                continue
+
             source = "mcp" if func_name in self._tools._mcp_tools else "local"
             with tool_call_span(func_name, source):
                 try:
@@ -405,6 +480,9 @@ class GeminiRealtime:
                 }
             )
         declarations.append(HANG_UP_TOOL)
+        if self._dtmf_tools:
+            declarations.append(COLLECT_DTMF_TOOL)
+            declarations.append(SEND_DTMF_TOOL)
         return declarations
 
     async def stop(self) -> None:
