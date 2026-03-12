@@ -44,6 +44,23 @@ def build_media_response(audio: bytes) -> dict[str, Any]:
     }
 
 
+VALID_DTMF_DIGITS = set("0123456789*#")
+
+
+def build_dtmf_message(digit: str) -> dict[str, Any]:
+    if digit not in VALID_DTMF_DIGITS:
+        raise ValueError(f"유효하지 않은 DTMF digit: {digit}")
+    return {"event": "dtmf", "dtmf": {"digit": digit}}
+
+
+def parse_dtmf_event(data: dict[str, Any]) -> dict[str, Any]:
+    dtmf = data["dtmf"]
+    return {
+        "digit": dtmf["digit"],
+        "track": dtmf.get("track", ""),
+    }
+
+
 class MediaWebSocket:
     def __init__(
         self,
@@ -53,12 +70,14 @@ class MediaWebSocket:
         on_audio: Callable[[bytes, int], Awaitable[None]],
         on_start: Callable[[dict[str, Any]], Awaitable[None]],
         on_stop: Callable[[], Awaitable[None]],
+        on_dtmf: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self._url = url
         self._api_key = api_key
         self._on_audio = on_audio
         self._on_start = on_start
         self._on_stop = on_stop
+        self._on_dtmf = on_dtmf
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -84,6 +103,9 @@ class MediaWebSocket:
                     elif event == "media":
                         parsed = parse_media_event(data)
                         await self._on_audio(parsed["audio"], parsed["timestamp"])
+                    elif event == "dtmf":
+                        if self._on_dtmf:
+                            await self._on_dtmf(parse_dtmf_event(data)["digit"])
                     elif event == "stop":
                         await self._on_stop()
                         break
@@ -110,6 +132,17 @@ class MediaWebSocket:
                 "event": "mark",
                 "mark": {"name": name},
             }))
+
+    async def send_dtmf(self, digit: str) -> None:
+        """단일 DTMF digit을 전송한다."""
+        msg = build_dtmf_message(digit)
+        if self._ws and not self._ws.closed:
+            await self._ws.send_str(json.dumps(msg))
+
+    @property
+    def is_connected(self) -> bool:
+        """WebSocket이 연결되어 있는지 확인한다."""
+        return self._ws is not None and not self._ws.closed
 
     async def _send_loop(self) -> None:
         """오디오 청크를 플랫폼으로 전송 (pacing은 플랫폼이 처리)."""

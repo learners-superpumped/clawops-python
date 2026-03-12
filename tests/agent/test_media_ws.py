@@ -1,5 +1,7 @@
 # tests/agent/test_media_ws.py
 import base64
+import json
+import pytest
 from clawops.agent._media_ws import parse_media_event, build_media_response, parse_start_event
 
 
@@ -42,3 +44,30 @@ def test_parse_start_event():
     assert result["stream_id"] == "MZ_abc"
     assert result["call_id"] == "CA_123"
     assert result["sample_rate"] == 8000
+
+
+def test_build_dtmf_message():
+    """send_dtmf가 올바른 포맷의 JSON 메시지를 생성하는지 확인."""
+    from clawops.agent._media_ws import build_dtmf_message
+    msg = build_dtmf_message("5")
+    assert msg == {"event": "dtmf", "dtmf": {"digit": "5"}}
+
+
+def test_build_dtmf_message_invalid():
+    """유효하지 않은 digit에 대해 ValueError를 발생시키는지 확인."""
+    from clawops.agent._media_ws import build_dtmf_message
+    with pytest.raises(ValueError, match="유효하지 않은 DTMF digit"):
+        build_dtmf_message("A")
+
+
+def test_parse_dtmf_event():
+    """서버에서 수신한 DTMF 이벤트를 파싱하는지 확인."""
+    from clawops.agent._media_ws import parse_dtmf_event
+    data = {
+        "event": "dtmf",
+        "sequenceNumber": "5",
+        "dtmf": {"digit": "1", "track": "inbound_track"},
+    }
+    result = parse_dtmf_event(data)
+    assert result["digit"] == "1"
+    assert result["track"] == "inbound_track"
