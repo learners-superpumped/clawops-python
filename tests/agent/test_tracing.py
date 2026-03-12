@@ -423,15 +423,19 @@ class TestToolCallSpanInstrumentation:
         mock_call = MagicMock()
         mock_call.send_audio = AsyncMock()
         session._call = mock_call
-        session._ws = MagicMock()
-        session._ws.closed = False
-        session._ws.send_str = AsyncMock()
 
-        item = {
-            "name": "dummy_tool",
-            "call_id": "call_abc",
-            "arguments": '{"city": "Seoul"}',
-        }
+        mock_conn = AsyncMock()
+        mock_conn.conversation = MagicMock()
+        mock_conn.conversation.item = MagicMock()
+        mock_conn.conversation.item.create = AsyncMock()
+        mock_conn.response = MagicMock()
+        mock_conn.response.create = AsyncMock()
+        session._connection = mock_conn
+
+        item = MagicMock()
+        item.name = "dummy_tool"
+        item.call_id = "call_abc"
+        item.arguments = '{"city": "Seoul"}'
 
         with patch("clawops.agent.pipeline._openai_realtime.tool_call_span") as mock_span:
             mock_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
@@ -460,20 +464,24 @@ class TestLLMSessionSpanInstrumentation:
         mock_call = MagicMock()
 
         with patch("clawops.agent.pipeline._openai_realtime.llm_session_span") as mock_span, \
-             patch("aiohttp.ClientSession") as mock_http:
+             patch("clawops.agent.pipeline._openai_realtime.AsyncOpenAI") as mock_openai:
             mock_span_cm = MagicMock()
             mock_span_cm.__enter__ = MagicMock(return_value=MagicMock())
             mock_span_cm.__exit__ = MagicMock(return_value=False)
             mock_span.return_value = mock_span_cm
 
-            mock_ws = AsyncMock()
-            mock_ws.closed = False
-            mock_ws.send_str = AsyncMock()
-            mock_ws.__aiter__ = MagicMock(return_value=iter([]))
-            mock_http_inst = AsyncMock()
-            mock_http_inst.ws_connect = AsyncMock(return_value=mock_ws)
-            mock_http_inst.close = AsyncMock()
-            mock_http.return_value = mock_http_inst
+            mock_conn = AsyncMock()
+            mock_conn.session = MagicMock()
+            mock_conn.session.update = AsyncMock()
+            mock_conn.response = MagicMock()
+            mock_conn.response.create = AsyncMock()
+            mock_conn.close = AsyncMock()
+            mock_manager = MagicMock()
+            mock_manager.enter = AsyncMock(return_value=mock_conn)
+            mock_client = MagicMock()
+            mock_client.realtime = MagicMock()
+            mock_client.realtime.connect = MagicMock(return_value=mock_manager)
+            mock_openai.return_value = mock_client
 
             await session.start(mock_call)
 
