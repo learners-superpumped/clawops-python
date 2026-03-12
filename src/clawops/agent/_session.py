@@ -132,7 +132,6 @@ class CallSession:
             elif ch == "W":
                 await asyncio.sleep(1.0)
             elif ch in "0123456789*#":
-                if self._send_dtmf_fn:
-                    await self._send_dtmf_fn(ch)
+                await self._send_dtmf_fn(ch)
             else:
                 raise ValueError(f"유효하지 않은 DTMF 문자: {ch}")
