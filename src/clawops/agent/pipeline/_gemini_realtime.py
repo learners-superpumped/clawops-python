@@ -55,7 +55,10 @@ SEND_DTMF_TOOL = {
     "parameters": {
         "type": "object",
         "properties": {
-            "digits": {"type": "string", "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기."},
+            "digits": {
+                "type": "string",
+                "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기.",
+            },
         },
         "required": ["digits"],
     },
@@ -171,8 +174,7 @@ class GeminiRealtime:
     ) -> None:
         if not _HAS_GENAI:
             raise ImportError(
-                "google-genai is required for GeminiRealtime. "
-                "Install it with: pip install clawops[gemini-llm]"
+                "google-genai is required for GeminiRealtime. Install it with: pip install clawops[gemini-llm]"
             )
         if api_key is None:
             api_key = os.environ.get("GOOGLE_API_KEY", "")
@@ -195,6 +197,7 @@ class GeminiRealtime:
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
         self._audio_remainder: bytes = b""  # 160B 미만 잔여 ulaw 버퍼
+        self._tool_call_in_progress: bool = False
 
     def set_tool_registry(self, registry: ToolRegistry) -> None:
         """콜별로 fork된 ToolRegistry를 주입한다."""
@@ -265,7 +268,7 @@ class GeminiRealtime:
         self._tasks.append(asyncio.create_task(self._receive_loop()))
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
-        if not self._session:
+        if not self._session or self._tool_call_in_progress:
             return
 
         # G.711 ulaw 8kHz → PCM16 8kHz → PCM16 16kHz
@@ -288,6 +291,7 @@ class GeminiRealtime:
         """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
         if self._session:
             from google.genai import types
+
             await self._session.send_client_content(
                 turns=types.Content(
                     role="user",
@@ -394,8 +398,10 @@ class GeminiRealtime:
             self._audio_remainder = b""
 
     async def _handle_tool_calls(self, tool_call: Any) -> None:
+        # 도구 호출 중에는 오디오 입력 중단 (Gemini가 tool call 상태에서 audio input 수신 시 1008 에러)
+        self._tool_call_in_progress = True
         function_calls = getattr(tool_call, "function_calls", [])
-        responses: list[types.LiveFunctionResponse] = []
+        responses: list[types.FunctionResponse] = []
 
         for fc in function_calls:
             func_name = getattr(fc, "name", "")
@@ -420,7 +426,7 @@ class GeminiRealtime:
                     except Exception as e:
                         dtmf_output = f"Error: {e}"
                     responses.append(
-                        types.LiveFunctionResponse(
+                        types.FunctionResponse(
                             id=fc_id,
                             name=func_name,
                             response={"result": dtmf_output},
@@ -436,7 +442,7 @@ class GeminiRealtime:
                     except Exception as e:
                         dtmf_output = f"Error: {e}"
                     responses.append(
-                        types.LiveFunctionResponse(
+                        types.FunctionResponse(
                             id=fc_id,
                             name=func_name,
                             response={"result": dtmf_output},
@@ -453,7 +459,7 @@ class GeminiRealtime:
                     result = f"Error: {e}"
 
             responses.append(
-                types.LiveFunctionResponse(
+                types.FunctionResponse(
                     id=fc_id,
                     name=func_name,
                     response={"result": str(result)},
@@ -464,6 +470,7 @@ class GeminiRealtime:
             await self._session.send_tool_response(
                 function_responses=responses,
             )
+        self._tool_call_in_progress = False
 
     def _build_tool_schemas(self) -> list[dict[str, Any]]:
         """ToolRegistry의 스키마를 Gemini functionDeclarations 형식으로 변환."""
