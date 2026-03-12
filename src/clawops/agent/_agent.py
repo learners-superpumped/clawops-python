@@ -275,6 +275,7 @@ class ClawOpsAgent:
             call._send_clear_fn = media_ws.send_clear
             async def _graceful_hangup() -> None:
                 import time
+                await media_ws.flush()
                 mark_name = f"hangup-{int(time.time() * 1000)}"
                 await media_ws.send_mark(mark_name)
                 await media_ws.wait_for_mark(mark_name, timeout=5.0)

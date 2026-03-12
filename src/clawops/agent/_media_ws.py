@@ -151,6 +151,11 @@ class MediaWebSocket:
         """WebSocket이 연결되어 있는지 확인한다."""
         return self._ws is not None and not self._ws.closed
 
+    async def flush(self) -> None:
+        """Wait for all queued audio to be sent."""
+        while not self._audio_queue.empty() and self.is_connected:
+            await asyncio.sleep(0.005)
+
     async def wait_for_mark(self, name: str, timeout: float = 5.0) -> None:
         """Wait for a named mark to be echoed back by the server."""
         if not self.is_connected:
