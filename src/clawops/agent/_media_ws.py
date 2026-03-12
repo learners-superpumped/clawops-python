@@ -138,6 +138,8 @@ class MediaWebSocket:
         msg = build_dtmf_message(digit)
         if self._ws and not self._ws.closed:
             await self._ws.send_str(json.dumps(msg))
+        else:
+            log.warning(f"DTMF send skipped (WS not connected): {digit}")
 
     @property
     def is_connected(self) -> bool:
