@@ -52,8 +52,7 @@ dev = [
 
 # Agent
 agent = ["aiohttp>=3.9.0,<4"]
-openai-realtime = ["clawops[agent]"]
-openai-llm = ["clawops[agent]", "openai>=1.0.0"]
+openai = ["clawops[agent]", "openai>=1.76.0"]
 anthropic-llm = ["clawops[agent]", "anthropic>=0.40.0"]
 gemini-llm = ["clawops[agent]", "google-genai>=1.60.0"]
 ollama = ["clawops[agent]", "openai>=1.0.0"]
@@ -70,8 +69,7 @@ google-tts = ["clawops[agent]", "google-cloud-texttospeech>=2.0.0"]
 mcp = ["clawops[agent]", "mcp>=1.0.0"]
 tracing = ["opentelemetry-api>=1.20.0"]
 agent-all = [
-    "clawops[openai-realtime]",
-    "clawops[openai-llm]",
+    "clawops[openai]",
     "clawops[anthropic-llm]",
     "clawops[gemini-llm]",
     "clawops[deepgram]",
