@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from ._openai_compat_llm import OpenAICompatibleLLM
+from ._openai_compat import OpenAICompatibleLLM
 
 
 class OllamaLLM(OpenAICompatibleLLM):

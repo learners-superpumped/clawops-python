@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 
-from clawops.agent.pipeline._elevenlabs_tts import ElevenLabsTTS
+from clawops.agent.pipeline.tts._elevenlabs import ElevenLabsTTS
 from clawops.agent.pipeline._base import TTS
 
 
@@ -46,7 +46,7 @@ async def test_elevenlabs_tts_synthesize():
     async def fake_text():
         yield "안녕하세요"
 
-    with patch("clawops.agent.pipeline._elevenlabs_tts.aiohttp.ClientSession", return_value=mock_session):
+    with patch("clawops.agent.pipeline.tts._elevenlabs.aiohttp.ClientSession", return_value=mock_session):
         result = []
         async for audio_chunk in tts.synthesize(fake_text()):
             result.append(audio_chunk)

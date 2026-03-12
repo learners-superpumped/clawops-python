@@ -1,5 +1,5 @@
 # tests/agent/test_realtime_session.py
-from clawops.agent.pipeline._openai_realtime import OpenAIRealtime, OpenAIRealtimeConfig
+from clawops.agent.pipeline.realtime._openai import OpenAIRealtime, OpenAIRealtimeConfig
 
 
 def test_openai_realtime_config_defaults():

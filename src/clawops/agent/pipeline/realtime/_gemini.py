@@ -21,49 +21,15 @@ except ImportError:
     types = None  # type: ignore[assignment]
     _HAS_GENAI = False
 
-from .._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
-from .._builtin_tools import BuiltinTool
-from .._recorder import AudioRecorder
-from .._session import CallSession
-from .._tool import ToolRegistry
-from ..tracing._spans import tool_call_span, llm_session_span
+from ..._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
+from ..._builtin_tools import BuiltinTool
+from ..._recorder import AudioRecorder
+from ..._session import CallSession
+from ..._tool import ToolRegistry
+from ...tracing._spans import tool_call_span, llm_session_span
+from .._builtin_tool_schemas import get_builtin_tool_schemas, execute_builtin_tool, BUILTIN_TOOL_NAMES
 
 log = logging.getLogger("clawops.agent")
-
-HANG_UP_TOOL = {
-    "name": "hang_up",
-    "description": "End the phone call. Use when the conversation is finished or the caller says goodbye.",
-    "parameters": {"type": "object", "properties": {}},
-}
-
-COLLECT_DTMF_TOOL = {
-    "name": "collect_dtmf",
-    "description": "사용자로부터 DTMF(전화 키패드) 입력을 수집합니다. 반드시 사용자에게 무엇을 입력해야 하는지 안내한 후 호출하세요.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "max_digits": {"type": "integer", "description": "수집할 최대 자릿수"},
-            "finish_on_key": {"type": "string", "description": "입력 종료 키 (기본: #)"},
-            "timeout": {"type": "integer", "description": "입력 대기 시간(초, 기본: 5)"},
-        },
-        "required": ["max_digits"],
-    },
-}
-
-SEND_DTMF_TOOL = {
-    "name": "send_dtmf",
-    "description": "DTMF 신호를 전송합니다. ARS 메뉴 탐색이나 내선번호 입력 시 사용합니다.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "digits": {
-                "type": "string",
-                "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기.",
-            },
-        },
-        "required": ["digits"],
-    },
-}
 
 
 def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any]:
@@ -410,47 +376,22 @@ class GeminiRealtime:
             args = getattr(fc, "args", {})
             log.info(f"Tool call: {func_name}({args})")
 
-            if func_name == "hang_up":
-                if self._call:
-                    await self._call.hangup()
-                return
-
-            elif func_name == "collect_dtmf":
-                if self._call:
-                    try:
-                        result = await self._call.collect_dtmf(
-                            max_digits=args.get("max_digits", 4),
-                            finish_on_key=args.get("finish_on_key", "#"),
-                            timeout=args.get("timeout", 5),
-                        )
-                        dtmf_output = result if result else "(타임아웃 - 입력 없음)"
-                    except Exception as e:
-                        dtmf_output = f"Error: {e}"
+            # Builtin tool 처리
+            if func_name in BUILTIN_TOOL_NAMES and self._call:
+                result = await execute_builtin_tool(func_name, args, self._call)
+                if result == "":  # hang_up
+                    return
+                if result is not None:
                     responses.append(
                         types.FunctionResponse(
                             id=fc_id,
                             name=func_name,
-                            response={"result": dtmf_output},
+                            response={"result": result},
                         )
                     )
                 continue
 
-            elif func_name == "send_dtmf":
-                if self._call:
-                    try:
-                        await self._call.send_dtmf_sequence(args.get("digits", ""))
-                        dtmf_output = "sent"
-                    except Exception as e:
-                        dtmf_output = f"Error: {e}"
-                    responses.append(
-                        types.FunctionResponse(
-                            id=fc_id,
-                            name=func_name,
-                            response={"result": dtmf_output},
-                        )
-                    )
-                continue
-
+            # Custom / MCP tool 처리
             source = "mcp" if func_name in self._tools._mcp_tools else "local"
             with tool_call_span(func_name, source):
                 try:
@@ -487,13 +428,7 @@ class GeminiRealtime:
                     "parameters": params,
                 }
             )
-        _use_hangup = self._builtin_tools is None or BuiltinTool.HANG_UP in self._builtin_tools
-        if _use_hangup:
-            declarations.append(HANG_UP_TOOL)
-        if self._builtin_tools is None or BuiltinTool.COLLECT_DTMF in self._builtin_tools:
-            declarations.append(COLLECT_DTMF_TOOL)
-        if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
-            declarations.append(SEND_DTMF_TOOL)
+        declarations.extend(get_builtin_tool_schemas(self._builtin_tools, fmt="gemini"))
         return declarations
 
     async def stop(self) -> None:

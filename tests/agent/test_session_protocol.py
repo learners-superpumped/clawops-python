@@ -1,8 +1,8 @@
 # tests/agent/test_session_protocol.py
 """Session Protocol 구현 검증."""
 from clawops.agent.pipeline._base import Session
-from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
-from clawops.agent.pipeline._gemini_realtime import GeminiRealtime
+from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
+from clawops.agent.pipeline.realtime._gemini import GeminiRealtime
 from clawops.agent.pipeline._pipeline_session import PipelineSession
 
 

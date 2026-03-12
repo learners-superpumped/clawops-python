@@ -1,7 +1,7 @@
 # tests/agent/test_agent.py
 import pytest
 from clawops.agent import ClawOpsAgent
-from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
 
 
 def _make_session(**kwargs):

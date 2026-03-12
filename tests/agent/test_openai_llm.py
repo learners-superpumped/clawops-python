@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from clawops.agent.pipeline._openai_llm import OpenAILLM
+from clawops.agent.pipeline.llm._openai import OpenAILLM
 from clawops.agent.pipeline._base import LLM
 
 

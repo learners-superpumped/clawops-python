@@ -14,54 +14,11 @@ from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
 from ._base import STT, LLM, TTS, SpeechEvent
+from ._builtin_tool_schemas import get_builtin_tool_schemas, execute_builtin_tool, BUILTIN_TOOL_NAMES
 
 log = logging.getLogger("clawops.agent.pipeline")
 
 _SENTENCE_END = re.compile(r"[.!?。！？]\s*$")
-
-HANG_UP_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "hang_up",
-        "description": "End the phone call.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-}
-
-COLLECT_DTMF_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "collect_dtmf",
-        "description": "사용자로부터 DTMF(전화 키패드) 입력을 수집합니다.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "max_digits": {"type": "integer", "description": "수집할 최대 자릿수"},
-                "finish_on_key": {"type": "string", "description": "입력 종료 키 (기본: #)"},
-                "timeout": {"type": "integer", "description": "입력 대기 시간(초, 기본: 5)"},
-            },
-            "required": ["max_digits"],
-        },
-    },
-}
-
-SEND_DTMF_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "send_dtmf",
-        "description": "DTMF 신호를 전송합니다. ARS 메뉴 탐색이나 내선번호 입력 시 사용합니다.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "digits": {
-                    "type": "string",
-                    "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기.",
-                },
-            },
-            "required": ["digits"],
-        },
-    },
-}
 
 
 def _to_chat_tools(realtime_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -254,13 +211,7 @@ class PipelineSession:
             return
         try:
             tool_schemas = _to_chat_tools(self._tools.to_openai_tools())
-            _use_hangup = self._builtin_tools is None or BuiltinTool.HANG_UP in self._builtin_tools
-            if _use_hangup:
-                tool_schemas.append(HANG_UP_TOOL)
-            if self._builtin_tools is None or BuiltinTool.COLLECT_DTMF in self._builtin_tools:
-                tool_schemas.append(COLLECT_DTMF_TOOL)
-            if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
-                tool_schemas.append(SEND_DTMF_TOOL)
+            tool_schemas.extend(get_builtin_tool_schemas(self._builtin_tools, fmt="chat"))
 
             pending_tool_calls: dict[str, Any] | None = None
 
@@ -354,68 +305,27 @@ class PipelineSession:
         for tc in tool_calls:
             func_name = tc["function"]["name"]
             call_id = tc["id"]
-            if func_name == "hang_up":
-                if self._call:
-                    await self._call.hangup()
-                return
-            elif func_name == "collect_dtmf":
-                if self._call:
-                    try:
-                        args = json.loads(tc["function"]["arguments"])
-                        result = await self._call.collect_dtmf(
-                            max_digits=args.get("max_digits", 4),
-                            finish_on_key=args.get("finish_on_key", "#"),
-                            timeout=args.get("timeout", 5),
-                        )
-                        self._messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": call_id,
-                                "content": result if result else "(타임아웃 - 입력 없음)",
-                            }
-                        )
-                    except Exception as e:
-                        self._messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": call_id,
-                                "content": f"Error: {e}",
-                            }
-                        )
-                continue
-            elif func_name == "send_dtmf":
-                if self._call:
-                    try:
-                        args = json.loads(tc["function"]["arguments"])
-                        await self._call.send_dtmf_sequence(args.get("digits", ""))
-                        self._messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": call_id,
-                                "content": "sent",
-                            }
-                        )
-                    except Exception as e:
-                        self._messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": call_id,
-                                "content": f"Error: {e}",
-                            }
-                        )
-                continue
+            args = json.loads(tc["function"]["arguments"])
+
+            # Builtin tool 처리
+            if func_name in BUILTIN_TOOL_NAMES and self._call:
+                result = await execute_builtin_tool(func_name, args, self._call)
+                if result == "":  # hang_up
+                    return
+                if result is not None:
+                    self._messages.append(
+                        {"role": "tool", "tool_call_id": call_id, "content": result}
+                    )
+                    continue
+
+            # Custom / MCP tool 처리
             try:
-                args = json.loads(tc["function"]["arguments"])
                 result = await self._tools.call(func_name, args)
             except Exception as e:
                 log.error(f"Tool call failed: {func_name}: {e}")
                 result = f"Error: {e}"
             self._messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": str(result),
-                }
+                {"role": "tool", "tool_call_id": call_id, "content": str(result)}
             )
 
         await self._respond()

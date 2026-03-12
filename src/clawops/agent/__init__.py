@@ -3,9 +3,7 @@
 from ._agent import ClawOpsAgent
 from ._builtin_tools import BuiltinTool
 from ._tool import ToolRegistry, function_tool
-from .pipeline._base import Session
-from .pipeline._openai_realtime import OpenAIRealtime
-from .pipeline._gemini_realtime import GeminiRealtime
+from .pipeline import Session, OpenAIRealtime, GeminiRealtime
 
 __all__ = [
     "BuiltinTool",

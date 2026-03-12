@@ -9,7 +9,7 @@ from typing import AsyncIterator
 
 import aiohttp
 
-from ._base import SpeechEvent
+from .._base import SpeechEvent
 
 log = logging.getLogger("clawops.agent.pipeline")
 

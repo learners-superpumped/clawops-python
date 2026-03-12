@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from clawops.agent.pipeline._anthropic_llm import AnthropicLLM
+from clawops.agent.pipeline.llm._anthropic import AnthropicLLM
 from clawops.agent.pipeline._base import LLM
 
 

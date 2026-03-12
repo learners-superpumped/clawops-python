@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 
-from clawops.agent.pipeline._deepgram_stt import DeepgramSTT
+from clawops.agent.pipeline.stt._deepgram import DeepgramSTT
 from clawops.agent.pipeline._base import STT
 
 
@@ -47,7 +47,7 @@ async def test_deepgram_stt_transcribe():
     async def fake_audio():
         yield b'\x00' * 640
 
-    with patch("clawops.agent.pipeline._deepgram_stt.aiohttp.ClientSession", return_value=mock_session):
+    with patch("clawops.agent.pipeline.stt._deepgram.aiohttp.ClientSession", return_value=mock_session):
         results = []
         async for text in stt.transcribe(fake_audio()):
             results.append(text)

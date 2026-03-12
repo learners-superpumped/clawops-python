@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from clawops.agent.pipeline._gemini_llm import GeminiLLM
+from clawops.agent.pipeline.llm._gemini import GeminiLLM
 from clawops.agent.pipeline._base import LLM
 
 

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from clawops.agent.pipeline._gemini_realtime import GeminiRealtime
+from clawops.agent.pipeline.realtime._gemini import GeminiRealtime
 
 
 def test_gemini_realtime_init():

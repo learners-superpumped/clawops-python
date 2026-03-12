@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..pipeline._openai_realtime import OpenAIRealtime, OpenAIRealtimeConfig
+from ..pipeline.realtime._openai import OpenAIRealtime, OpenAIRealtimeConfig
 
 __all__ = [
     "OpenAIRealtime",

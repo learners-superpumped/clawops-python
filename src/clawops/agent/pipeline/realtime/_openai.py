@@ -17,63 +17,15 @@ from typing import Any
 from openai import AsyncOpenAI
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
 
-from .._audio import ulaw_to_pcm16
-from .._builtin_tools import BuiltinTool
-from .._recorder import AudioRecorder
-from .._session import CallSession
-from .._tool import ToolRegistry
-from ..tracing._spans import tool_call_span, llm_session_span
+from ..._audio import ulaw_to_pcm16
+from ..._builtin_tools import BuiltinTool
+from ..._recorder import AudioRecorder
+from ..._session import CallSession
+from ..._tool import ToolRegistry
+from ...tracing._spans import tool_call_span, llm_session_span
+from .._builtin_tool_schemas import get_builtin_tool_schemas, execute_builtin_tool, BUILTIN_TOOL_NAMES
 
 log = logging.getLogger("clawops.agent")
-
-HANG_UP_TOOL = {
-    "type": "function",
-    "name": "hang_up",
-    "description": "End the phone call. Use when the conversation is finished or the caller says goodbye.",
-    "parameters": {"type": "object", "properties": {}},
-}
-
-COLLECT_DTMF_TOOL = {
-    "type": "function",
-    "name": "collect_dtmf",
-    "description": "사용자로부터 DTMF(전화 키패드) 입력을 수집합니다. 반드시 사용자에게 무엇을 입력해야 하는지 안내한 후 호출하세요.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "max_digits": {
-                "type": "integer",
-                "description": "수집할 최대 자릿수",
-            },
-            "finish_on_key": {
-                "type": "string",
-                "description": "입력 종료 키 (기본: #)",
-                "default": "#",
-            },
-            "timeout": {
-                "type": "integer",
-                "description": "입력 대기 시간(초, 기본: 5)",
-                "default": 5,
-            },
-        },
-        "required": ["max_digits"],
-    },
-}
-
-SEND_DTMF_TOOL = {
-    "type": "function",
-    "name": "send_dtmf",
-    "description": "DTMF 신호를 전송합니다. ARS 메뉴 탐색이나 내선번호 입력 시 사용합니다.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "digits": {
-                "type": "string",
-                "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기. 예: '1', '1234#', '1w2'",
-            },
-        },
-        "required": ["digits"],
-    },
-}
 
 
 @dataclass
@@ -160,13 +112,7 @@ class OpenAIRealtime:
         log.info("OpenAI Realtime connected")
 
         tool_schemas = self._tools.to_openai_tools()
-        _use_hangup = self._builtin_tools is None or BuiltinTool.HANG_UP in self._builtin_tools
-        if _use_hangup:
-            tool_schemas.append(HANG_UP_TOOL)
-        if self._builtin_tools is None or BuiltinTool.COLLECT_DTMF in self._builtin_tools:
-            tool_schemas.append(COLLECT_DTMF_TOOL)
-        if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
-            tool_schemas.append(SEND_DTMF_TOOL)
+        tool_schemas.extend(get_builtin_tool_schemas(self._builtin_tools, fmt="realtime"))
 
         await self._connection.session.update(
             session={
@@ -296,42 +242,15 @@ class OpenAIRealtime:
     async def _handle_tool_call(self, item: Any) -> None:
         func_name = item.name or ""
         call_id = item.call_id or ""
-        log.info(f"Tool call: {func_name}({item.arguments})")
+        args = json.loads(item.arguments or "{}")
+        log.info(f"Tool call: {func_name}({args})")
 
-        if func_name == "hang_up":
-            if self._call:
-                await self._call.hangup()
-            return
-
-        if func_name == "collect_dtmf":
-            if self._call and self._connection:
-                try:
-                    args = json.loads(item.arguments or "{}")
-                    result = await self._call.collect_dtmf(
-                        max_digits=args.get("max_digits", 4),
-                        finish_on_key=args.get("finish_on_key", "#"),
-                        timeout=args.get("timeout", 5),
-                    )
-                except Exception as e:
-                    result = f"Error: {e}"
-                await self._connection.conversation.item.create(
-                    item={
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": result if result else "(타임아웃 - 입력 없음)",
-                    }
-                )
-                await self._connection.response.create()
-            return
-
-        if func_name == "send_dtmf":
-            if self._call and self._connection:
-                try:
-                    args = json.loads(item.arguments or "{}")
-                    await self._call.send_dtmf_sequence(args.get("digits", ""))
-                    result = "sent"
-                except Exception as e:
-                    result = f"Error: {e}"
+        # Builtin tool 처리
+        if func_name in BUILTIN_TOOL_NAMES and self._call:
+            result = await execute_builtin_tool(func_name, args, self._call)
+            if result == "":  # hang_up
+                return
+            if result is not None and self._connection:
                 await self._connection.conversation.item.create(
                     item={
                         "type": "function_call_output",
@@ -345,11 +264,11 @@ class OpenAIRealtime:
         if not self._connection:
             return
 
+        # Custom / MCP tool 처리
         source = "mcp" if func_name in self._tools._mcp_tools else "local"
 
         with tool_call_span(func_name, source):
             try:
-                args = json.loads(item.arguments or "{}")
                 result = await self._tools.call(func_name, args)
             except Exception as e:
                 log.error(f"Tool call failed: {func_name}: {e}")

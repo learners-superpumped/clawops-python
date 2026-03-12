@@ -4,7 +4,7 @@ import pytest
 from clawops.agent import ClawOpsAgent
 from clawops.agent._session import CallSession
 from clawops.agent._tool import ToolRegistry
-from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
 
 
 def _make_session(**kwargs):
@@ -109,7 +109,7 @@ def test_all_imports():
     from clawops.agent._control_ws import ControlWebSocket
     from clawops.agent._media_ws import MediaWebSocket
     from clawops.agent.pipeline import STT, LLM, TTS
-    from clawops.agent.pipeline._openai_realtime import OpenAIRealtime, OpenAIRealtimeConfig
-    from clawops.agent.pipeline._gemini_realtime import GeminiRealtime
+    from clawops.agent.pipeline.realtime._openai import OpenAIRealtime, OpenAIRealtimeConfig
+    from clawops.agent.pipeline.realtime._gemini import GeminiRealtime
     from clawops.agent.mcp import MCPServerHTTP, MCPServerStdio, MCPClient
     # All imports successful

@@ -19,7 +19,7 @@ from ._media_ws import MediaWebSocket
 from ._session import CallSession
 from ._recorder import AudioRecorder
 from ._tool import ToolRegistry
-from .pipeline._base import Session
+from .pipeline import Session
 from .tracing import TracingConfig
 from .tracing._spans import call_span, mcp_connect_span, setup_tracing
 

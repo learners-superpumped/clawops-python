@@ -197,7 +197,7 @@ class TestTracingExtra:
 
 
 def _make_session():
-    from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+    from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
     return OpenAIRealtime(api_key="sk-test")
 
 
@@ -403,7 +403,7 @@ class TestMCPCallToolSpanInstrumentation:
 class TestToolCallSpanInstrumentation:
     @pytest.mark.asyncio
     async def test_handle_tool_call_uses_span(self):
-        from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+        from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
         from clawops.agent._tool import ToolRegistry
 
         registry = ToolRegistry()
@@ -437,7 +437,7 @@ class TestToolCallSpanInstrumentation:
         item.call_id = "call_abc"
         item.arguments = '{"city": "Seoul"}'
 
-        with patch("clawops.agent.pipeline._openai_realtime.tool_call_span") as mock_span:
+        with patch("clawops.agent.pipeline.realtime._openai.tool_call_span") as mock_span:
             mock_span.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_span.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -449,7 +449,7 @@ class TestToolCallSpanInstrumentation:
 class TestLLMSessionSpanInstrumentation:
     @pytest.mark.asyncio
     async def test_start_creates_llm_session_span(self):
-        from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+        from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
         from clawops.agent._tool import ToolRegistry
 
         registry = ToolRegistry()
@@ -463,8 +463,8 @@ class TestLLMSessionSpanInstrumentation:
 
         mock_call = MagicMock()
 
-        with patch("clawops.agent.pipeline._openai_realtime.llm_session_span") as mock_span, \
-             patch("clawops.agent.pipeline._openai_realtime.AsyncOpenAI") as mock_openai:
+        with patch("clawops.agent.pipeline.realtime._openai.llm_session_span") as mock_span, \
+             patch("clawops.agent.pipeline.realtime._openai.AsyncOpenAI") as mock_openai:
             mock_span_cm = MagicMock()
             mock_span_cm.__enter__ = MagicMock(return_value=MagicMock())
             mock_span_cm.__exit__ = MagicMock(return_value=False)
@@ -635,7 +635,7 @@ class TestLLMSpanExceptionPropagation:
     @pytest.mark.asyncio
     async def test_cleanup_passes_exception_info_to_span_exit(self):
         """_cleanup이 활성 예외 정보를 span __exit__에 전달하는지 확인."""
-        from clawops.agent.pipeline._openai_realtime import OpenAIRealtime
+        from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
         from clawops.agent._tool import ToolRegistry
 
         registry = ToolRegistry()

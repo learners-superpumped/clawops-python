@@ -10,14 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from clawops.agent.pipeline._base import LLM
-from clawops.agent.pipeline._ollama_llm import OllamaLLM
-from clawops.agent.pipeline._mistral_llm import MistralLLM
-from clawops.agent.pipeline._groq_llm import GroqLLM
-from clawops.agent.pipeline._perplexity_llm import PerplexityLLM
-from clawops.agent.pipeline._together_llm import TogetherLLM
-from clawops.agent.pipeline._fireworks_llm import FireworksLLM
-from clawops.agent.pipeline._deepseek_llm import DeepSeekLLM
-from clawops.agent.pipeline._xai_llm import XaiLLM
+from clawops.agent.pipeline.llm._ollama import OllamaLLM
+from clawops.agent.pipeline.llm._mistral import MistralLLM
+from clawops.agent.pipeline.llm._groq import GroqLLM
+from clawops.agent.pipeline.llm._perplexity import PerplexityLLM
+from clawops.agent.pipeline.llm._together import TogetherLLM
+from clawops.agent.pipeline.llm._fireworks import FireworksLLM
+from clawops.agent.pipeline.llm._deepseek import DeepSeekLLM
+from clawops.agent.pipeline.llm._xai import XaiLLM
 
 
 PROVIDERS = [
