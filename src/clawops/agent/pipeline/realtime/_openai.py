@@ -124,7 +124,7 @@ class OpenAIRealtime:
                         "format": {"type": "audio/pcmu"},
                         "noise_reduction": {"type": "far_field"},
                         "transcription": {
-                            "model": "gpt-4o-mini-transcribe",
+                            "model": "whisper-1",
                             "language": self._config.language,
                         },
                         "turn_detection": {
