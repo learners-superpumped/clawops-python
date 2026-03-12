@@ -1,4 +1,5 @@
 """PipelineSession: STT -> LLM -> TTS 파이프라인 오케스트레이터."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +9,7 @@ import re
 from typing import Any, AsyncIterator
 
 from .._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
+from .._builtin_tools import BuiltinTool
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -15,7 +17,7 @@ from ._base import STT, LLM, TTS, SpeechEvent
 
 log = logging.getLogger("clawops.agent.pipeline")
 
-_SENTENCE_END = re.compile(r'[.!?。！？]\s*$')
+_SENTENCE_END = re.compile(r"[.!?。！？]\s*$")
 
 HANG_UP_TOOL = {
     "type": "function",
@@ -51,7 +53,10 @@ SEND_DTMF_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "digits": {"type": "string", "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기."},
+                "digits": {
+                    "type": "string",
+                    "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기.",
+                },
             },
             "required": ["digits"],
         },
@@ -70,14 +75,16 @@ def _to_chat_tools(realtime_tools: list[dict[str, Any]]) -> list[dict[str, Any]]
         if "function" in tool and isinstance(tool["function"], dict):
             result.append(tool)
         else:
-            result.append({
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("parameters", {"type": "object", "properties": {}}),
-                },
-            })
+            result.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("parameters", {"type": "object", "properties": {}}),
+                    },
+                }
+            )
     return result
 
 
@@ -99,7 +106,7 @@ class PipelineSession:
         self._tts = tts
         self._system_prompt = system_prompt
         self._tools = tool_registry or ToolRegistry()
-        self._dtmf_tools: bool = True
+        self._builtin_tools: set[BuiltinTool] | None = None
         self._greeting = greeting
         self._language = language
         self._recorder = recorder
@@ -117,9 +124,9 @@ class PipelineSession:
         """콜별로 fork된 ToolRegistry를 주입한다."""
         self._tools = registry
 
-    def set_dtmf_tools(self, enabled: bool) -> None:
-        """DTMF tool 등록 여부를 설정한다."""
-        self._dtmf_tools = enabled
+    def set_builtin_tools(self, tools: set[BuiltinTool]) -> None:
+        """사용할 내장 도구 set을 지정."""
+        self._builtin_tools = tools
 
     def set_recorder(self, recorder: AudioRecorder) -> None:
         """콜별로 생성된 AudioRecorder를 주입한다."""
@@ -141,10 +148,12 @@ class PipelineSession:
 
     async def feed_dtmf(self, digits: str) -> None:
         """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
-        self._messages.append({
-            "role": "user",
-            "content": f"[DTMF 입력: {digits}]",
-        })
+        self._messages.append(
+            {
+                "role": "user",
+                "content": f"[DTMF 입력: {digits}]",
+            }
+        )
         await self._respond()
 
     async def stop(self) -> None:
@@ -186,7 +195,7 @@ class PipelineSession:
     async def _handle_interim_speech(self, event: SpeechEvent) -> None:
         """사용자 발화 감지 (interim) → AI 오디오가 재생 중이면 즉시 중단."""
         if self._sent_audio_chunks > 0:
-            log.info(f"Barge-in: \"{event.transcript[:30]}\" — clearing AI audio")
+            log.info(f'Barge-in: "{event.transcript[:30]}" — clearing AI audio')
             # 응답 생성 중이면 취소
             if self._current_response_task and not self._current_response_task.done():
                 self._current_response_task.cancel()
@@ -225,9 +234,7 @@ class PipelineSession:
                 log.info("Response cancelled (no audio sent yet)")
             if self._pending_respond_task and not self._pending_respond_task.done():
                 self._pending_respond_task.cancel()
-            self._pending_respond_task = asyncio.create_task(
-                self._debounced_respond(0.5)
-            )
+            self._pending_respond_task = asyncio.create_task(self._debounced_respond(0.5))
 
     # ── 응답 생성 ────────────────────────────────────────────
 
@@ -246,9 +253,13 @@ class PipelineSession:
             return
         try:
             tool_schemas = _to_chat_tools(self._tools.to_openai_tools())
-            tool_schemas.append(HANG_UP_TOOL)
-            if self._dtmf_tools:
-                tool_schemas += [COLLECT_DTMF_TOOL, SEND_DTMF_TOOL]
+            _use_hangup = self._builtin_tools is None or BuiltinTool.HANG_UP in self._builtin_tools
+            if _use_hangup:
+                tool_schemas.append(HANG_UP_TOOL)
+            if self._builtin_tools is None or BuiltinTool.COLLECT_DTMF in self._builtin_tools:
+                tool_schemas.append(COLLECT_DTMF_TOOL)
+            if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
+                tool_schemas.append(SEND_DTMF_TOOL)
 
             async def text_stream() -> AsyncIterator[str]:
                 buffer = ""
@@ -283,14 +294,18 @@ class PipelineSession:
                     log.warning("TTS audio received but session stopped")
                     break
                 if self._recorder:
-                    pcm16_8k = resample_pcm16(audio, from_rate=tts_sample_rate, to_rate=8000) if tts_sample_rate != 8000 else audio
+                    pcm16_8k = (
+                        resample_pcm16(audio, from_rate=tts_sample_rate, to_rate=8000)
+                        if tts_sample_rate != 8000
+                        else audio
+                    )
                     self._recorder.write_outbound(pcm16_8k)
                 pcm8k = resample_pcm16(audio, from_rate=tts_sample_rate, to_rate=8000)
                 ulaw = pcm16_to_ulaw(pcm8k)
                 for off in range(0, len(ulaw), 160):
-                    chunk = ulaw[off:off + 160]
+                    chunk = ulaw[off : off + 160]
                     if len(chunk) < 160:
-                        chunk = chunk + b'\xff' * (160 - len(chunk))
+                        chunk = chunk + b"\xff" * (160 - len(chunk))
                     await self._call.send_audio(chunk)
                     self._sent_audio_chunks += 1
 
@@ -308,21 +323,23 @@ class PipelineSession:
 
     async def _handle_tool_calls(self, data: dict[str, Any]) -> None:
         tool_calls = data.get("tool_calls", [])
-        self._messages.append({
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": tc["id"],
-                    "type": "function",
-                    "function": {
-                        "name": tc["function"]["name"],
-                        "arguments": tc["function"]["arguments"],
-                    },
-                }
-                for tc in tool_calls
-            ],
-        })
+        self._messages.append(
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": tc["function"]["arguments"],
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            }
+        )
 
         for tc in tool_calls:
             func_name = tc["function"]["name"]
@@ -340,30 +357,42 @@ class PipelineSession:
                             finish_on_key=args.get("finish_on_key", "#"),
                             timeout=args.get("timeout", 5),
                         )
-                        self._messages.append({
-                            "role": "tool", "tool_call_id": call_id,
-                            "content": result if result else "(타임아웃 - 입력 없음)",
-                        })
+                        self._messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": result if result else "(타임아웃 - 입력 없음)",
+                            }
+                        )
                     except Exception as e:
-                        self._messages.append({
-                            "role": "tool", "tool_call_id": call_id,
-                            "content": f"Error: {e}",
-                        })
+                        self._messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": f"Error: {e}",
+                            }
+                        )
                 continue
             elif func_name == "send_dtmf":
                 if self._call:
                     try:
                         args = json.loads(tc["function"]["arguments"])
                         await self._call.send_dtmf_sequence(args.get("digits", ""))
-                        self._messages.append({
-                            "role": "tool", "tool_call_id": call_id,
-                            "content": "sent",
-                        })
+                        self._messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": "sent",
+                            }
+                        )
                     except Exception as e:
-                        self._messages.append({
-                            "role": "tool", "tool_call_id": call_id,
-                            "content": f"Error: {e}",
-                        })
+                        self._messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": call_id,
+                                "content": f"Error: {e}",
+                            }
+                        )
                 continue
             try:
                 args = json.loads(tc["function"]["arguments"])
@@ -371,11 +400,13 @@ class PipelineSession:
             except Exception as e:
                 log.error(f"Tool call failed: {func_name}: {e}")
                 result = f"Error: {e}"
-            self._messages.append({
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": str(result),
-            })
+            self._messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": str(result),
+                }
+            )
 
         await self._respond()
 

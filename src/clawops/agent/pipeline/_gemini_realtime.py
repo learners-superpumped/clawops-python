@@ -22,6 +22,7 @@ except ImportError:
     _HAS_GENAI = False
 
 from .._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
+from .._builtin_tools import BuiltinTool
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -185,7 +186,7 @@ class GeminiRealtime:
         self._language = language
         self._greeting = greeting
         self._tools = tool_registry or ToolRegistry()
-        self._dtmf_tools: bool = True
+        self._builtin_tools: set[BuiltinTool] | None = None
         self._recorder = recorder
 
         self._client = genai.Client(api_key=api_key)
@@ -203,9 +204,9 @@ class GeminiRealtime:
         """콜별로 fork된 ToolRegistry를 주입한다."""
         self._tools = registry
 
-    def set_dtmf_tools(self, enabled: bool) -> None:
-        """DTMF tool 등록 여부를 설정한다."""
-        self._dtmf_tools = enabled
+    def set_builtin_tools(self, tools: set[BuiltinTool]) -> None:
+        """사용할 내장 도구 set을 지정."""
+        self._builtin_tools = tools
 
     def set_recorder(self, recorder: AudioRecorder) -> None:
         """콜별로 생성된 AudioRecorder를 주입한다."""
@@ -486,9 +487,12 @@ class GeminiRealtime:
                     "parameters": params,
                 }
             )
-        declarations.append(HANG_UP_TOOL)
-        if self._dtmf_tools:
+        _use_hangup = self._builtin_tools is None or BuiltinTool.HANG_UP in self._builtin_tools
+        if _use_hangup:
+            declarations.append(HANG_UP_TOOL)
+        if self._builtin_tools is None or BuiltinTool.COLLECT_DTMF in self._builtin_tools:
             declarations.append(COLLECT_DTMF_TOOL)
+        if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
             declarations.append(SEND_DTMF_TOOL)
         return declarations
 

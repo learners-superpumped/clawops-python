@@ -12,6 +12,7 @@ import signal
 from typing import Any, Callable, Awaitable
 
 from .._exceptions import AgentError
+from ._builtin_tools import BuiltinTool, resolve_builtin_tools
 from ._control_ws import ControlWebSocket
 from .mcp._client import MCPClient
 from ._media_ws import MediaWebSocket
@@ -38,7 +39,7 @@ class ClawOpsAgent:
         recording: bool = False,
         recording_path: str = "./recordings",
         tracing: TracingConfig | None = None,
-        dtmf_tools: bool = True,
+        builtin_tools: BuiltinTool | list[BuiltinTool] = BuiltinTool.ALL,
         passive_dtmf_debounce_ms: int = 500,
     ) -> None:
         if api_key is None:
@@ -68,7 +69,7 @@ class ClawOpsAgent:
         if self._tracing is not None:
             setup_tracing(self._tracing)
 
-        self._dtmf_tools = dtmf_tools
+        self._builtin_tools = resolve_builtin_tools(builtin_tools)
         self._passive_dtmf_debounce_ms = passive_dtmf_debounce_ms
         self._passive_dtmf_buffer: list[str] = []
         self._passive_dtmf_task: asyncio.Task[None] | None = None
@@ -249,8 +250,8 @@ class ClawOpsAgent:
                 session.set_tool_registry(call_tools)
             if recorder and hasattr(session, "set_recorder"):
                 session.set_recorder(recorder)
-            if hasattr(session, "set_dtmf_tools"):
-                session.set_dtmf_tools(self._dtmf_tools)
+            if hasattr(session, "set_builtin_tools"):
+                session.set_builtin_tools(self._builtin_tools)
 
             async def on_audio(ulaw: bytes, ts: int) -> None:
                 await session.feed_audio(ulaw, ts)
@@ -273,13 +274,16 @@ class ClawOpsAgent:
 
             call._send_audio_fn = media_ws.send_audio
             call._send_clear_fn = media_ws.send_clear
+
             async def _graceful_hangup() -> None:
                 import time
+
                 await media_ws.flush()
                 mark_name = f"hangup-{int(time.time() * 1000)}"
                 await media_ws.send_mark(mark_name)
                 await media_ws.wait_for_mark(mark_name, timeout=5.0)
                 await media_ws.close()
+
             call._hangup_fn = _graceful_hangup
             call._send_dtmf_fn = media_ws.send_dtmf
             call._media_ws = media_ws

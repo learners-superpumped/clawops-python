@@ -2,6 +2,7 @@
 
 Session Protocol을 구현하며, OpenAI Realtime WebSocket API를 사용한다.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +16,7 @@ from typing import Any
 import aiohttp
 
 from .._audio import ulaw_to_pcm16
+from .._builtin_tools import BuiltinTool
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -119,7 +121,7 @@ class OpenAIRealtime:
             greeting=greeting,
         )
         self._tools = tool_registry or ToolRegistry()
-        self._dtmf_tools: bool = True
+        self._builtin_tools: set[BuiltinTool] | None = None
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._http: aiohttp.ClientSession | None = None
         self._call: CallSession | None = None
@@ -137,9 +139,9 @@ class OpenAIRealtime:
         """콜별로 fork된 ToolRegistry를 주입한다."""
         self._tools = registry
 
-    def set_dtmf_tools(self, enabled: bool) -> None:
-        """DTMF tool 등록 여부를 설정한다."""
-        self._dtmf_tools = enabled
+    def set_builtin_tools(self, tools: set[BuiltinTool]) -> None:
+        """사용할 내장 도구 set을 지정."""
+        self._builtin_tools = tools
 
     def set_recorder(self, recorder: AudioRecorder) -> None:
         """콜별로 생성된 AudioRecorder를 주입한다."""
@@ -149,9 +151,7 @@ class OpenAIRealtime:
         self._call = call
 
         # Start LLM session span
-        self._llm_span_ctx = llm_session_span(
-            self._config.model, voice=self._config.voice
-        )
+        self._llm_span_ctx = llm_session_span(self._config.model, voice=self._config.voice)
         self._llm_span = self._llm_span_ctx.__enter__()
 
         url = OPENAI_REALTIME_URL.format(model=self._config.model)
@@ -166,31 +166,38 @@ class OpenAIRealtime:
         )
         log.info("OpenAI Realtime connected")
 
-        tool_schemas = self._tools.to_openai_tools() + [HANG_UP_TOOL]
-        if self._dtmf_tools:
-            tool_schemas += [COLLECT_DTMF_TOOL, SEND_DTMF_TOOL]
+        tool_schemas = self._tools.to_openai_tools()
+        _use_hangup = self._builtin_tools is None or BuiltinTool.HANG_UP in self._builtin_tools
+        if _use_hangup:
+            tool_schemas.append(HANG_UP_TOOL)
+        if self._builtin_tools is None or BuiltinTool.COLLECT_DTMF in self._builtin_tools:
+            tool_schemas.append(COLLECT_DTMF_TOOL)
+        if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
+            tool_schemas.append(SEND_DTMF_TOOL)
 
-        await self._send({
-            "type": "session.update",
-            "session": {
-                "modalities": ["text", "audio"],
-                "voice": self._config.voice,
-                "instructions": self._config.system_prompt,
-                "input_audio_format": "g711_ulaw",
-                "output_audio_format": "g711_ulaw",
-                "input_audio_transcription": {
-                    "model": "gpt-4o-mini-transcribe",
-                    "language": self._config.language,
+        await self._send(
+            {
+                "type": "session.update",
+                "session": {
+                    "modalities": ["text", "audio"],
+                    "voice": self._config.voice,
+                    "instructions": self._config.system_prompt,
+                    "input_audio_format": "g711_ulaw",
+                    "output_audio_format": "g711_ulaw",
+                    "input_audio_transcription": {
+                        "model": "gpt-4o-mini-transcribe",
+                        "language": self._config.language,
+                    },
+                    "input_audio_noise_reduction": {"type": "far_field"},
+                    "turn_detection": {
+                        "type": "semantic_vad",
+                        "interrupt_response": True,
+                        "eagerness": self._config.eagerness,
+                    },
+                    "tools": tool_schemas,
                 },
-                "input_audio_noise_reduction": {"type": "far_field"},
-                "turn_detection": {
-                    "type": "semantic_vad",
-                    "interrupt_response": True,
-                    "eagerness": self._config.eagerness,
-                },
-                "tools": tool_schemas,
-            },
-        })
+            }
+        )
 
         if self._config.greeting:
             await self._send({"type": "response.create"})
@@ -200,21 +207,25 @@ class OpenAIRealtime:
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
         self._latest_media_ts = timestamp
         # Agent 경로: 플랫폼에서 ulaw 직통으로 받으므로 변환 불필요
-        await self._send({
-            "type": "input_audio_buffer.append",
-            "audio": base64.b64encode(audio).decode(),
-        })
+        await self._send(
+            {
+                "type": "input_audio_buffer.append",
+                "audio": base64.b64encode(audio).decode(),
+            }
+        )
 
     async def feed_dtmf(self, digits: str) -> None:
         """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
-        await self._send({
-            "type": "conversation.item.create",
-            "item": {
-                "type": "message",
-                "role": "user",
-                "content": [{"type": "input_text", "text": f"[DTMF 입력: {digits}]"}],
-            },
-        })
+        await self._send(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": f"[DTMF 입력: {digits}]"}],
+                },
+            }
+        )
         await self._send({"type": "response.create"})
 
     async def _receive_loop(self) -> None:
@@ -254,8 +265,8 @@ class OpenAIRealtime:
                 elapsed = now - getattr(self, "_diag_last_delta_time", now)
                 log.info(
                     f"[OAI-DIAG] delta#{self._diag_delta_count} "
-                    f"last50in={elapsed*1000:.0f}ms "
-                    f"avg={elapsed*1000/50:.1f}ms/delta "
+                    f"last50in={elapsed * 1000:.0f}ms "
+                    f"avg={elapsed * 1000 / 50:.1f}ms/delta "
                     f"size={len(ulaw)}B "
                     f"totalChunks={self._sent_audio_chunks}"
                 )
@@ -274,7 +285,7 @@ class OpenAIRealtime:
         elif event_type == "response.audio.done":
             # 응답 오디오 종료 — 잔여 바이트를 silence 패딩하여 flush
             if self._audio_remainder:
-                padded = self._audio_remainder + b'\xff' * (160 - len(self._audio_remainder))
+                padded = self._audio_remainder + b"\xff" * (160 - len(self._audio_remainder))
                 await self._call.send_audio(padded)
                 self._sent_audio_chunks += 1
                 self._audio_remainder = b""
@@ -317,14 +328,16 @@ class OpenAIRealtime:
                     )
                 except Exception as e:
                     result = f"Error: {e}"
-                await self._send({
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": result if result else "(타임아웃 - 입력 없음)",
-                    },
-                })
+                await self._send(
+                    {
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": result if result else "(타임아웃 - 입력 없음)",
+                        },
+                    }
+                )
                 await self._send({"type": "response.create"})
             return
 
@@ -336,14 +349,16 @@ class OpenAIRealtime:
                     result = "sent"
                 except Exception as e:
                     result = f"Error: {e}"
-                await self._send({
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": result,
-                    },
-                })
+                await self._send(
+                    {
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": result,
+                        },
+                    }
+                )
                 await self._send({"type": "response.create"})
             return
 
@@ -360,14 +375,16 @@ class OpenAIRealtime:
 
         log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
 
-        await self._send({
-            "type": "conversation.item.create",
-            "item": {
-                "type": "function_call_output",
-                "call_id": call_id,
-                "output": str(result),
-            },
-        })
+        await self._send(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": str(result),
+                },
+            }
+        )
         log.debug(f"Sent function_call_output for {func_name}, requesting response")
         await self._send({"type": "response.create"})
 
@@ -378,12 +395,14 @@ class OpenAIRealtime:
         # 실제 송신한 오디오 양 기반으로 계산 (160B = 20ms per ulaw chunk)
         audio_end_ms = max(0, self._sent_audio_chunks * 20)
 
-        await self._send({
-            "type": "conversation.item.truncate",
-            "item_id": self._last_assistant_item,
-            "content_index": 0,
-            "audio_end_ms": audio_end_ms,
-        })
+        await self._send(
+            {
+                "type": "conversation.item.truncate",
+                "item_id": self._last_assistant_item,
+                "content_index": 0,
+                "audio_end_ms": audio_end_ms,
+            }
+        )
 
         if self._call:
             await self._call.clear_audio()
@@ -417,6 +436,7 @@ class OpenAIRealtime:
         # Close LLM session span, propagating any active exception info
         if self._llm_span_ctx:
             import sys
+
             exc_info = sys.exc_info()
             self._llm_span_ctx.__exit__(*exc_info)
             self._llm_span_ctx = None
