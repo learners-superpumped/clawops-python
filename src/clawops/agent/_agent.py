@@ -37,6 +37,8 @@ class ClawOpsAgent:
         recording: bool = False,
         recording_path: str = "./recordings",
         tracing: TracingConfig | None = None,
+        dtmf_tools: bool = True,
+        passive_dtmf_debounce_ms: int = 500,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -64,6 +66,13 @@ class ClawOpsAgent:
 
         if self._tracing is not None:
             setup_tracing(self._tracing)
+
+        self._dtmf_tools = dtmf_tools
+        self._passive_dtmf_debounce_ms = passive_dtmf_debounce_ms
+        self._passive_dtmf_buffer: list[str] = []
+        self._passive_dtmf_task: asyncio.Task[None] | None = None
+        self._passive_dtmf_call_id: str | None = None
+        self._call_sessions: dict[str, Any] = {}  # call_id → pipeline Session (feed_dtmf용)
 
         self._tool_registry = ToolRegistry()
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
@@ -235,6 +244,8 @@ class ClawOpsAgent:
                 session.set_tool_registry(call_tools)
             if recorder and hasattr(session, "set_recorder"):
                 session.set_recorder(recorder)
+            if hasattr(session, "set_dtmf_tools"):
+                session.set_dtmf_tools(self._dtmf_tools)
 
             async def on_audio(ulaw: bytes, ts: int) -> None:
                 await session.feed_audio(ulaw, ts)
@@ -242,17 +253,25 @@ class ClawOpsAgent:
                     from ._audio import ulaw_to_pcm16
                     recorder.write_inbound(ulaw_to_pcm16(ulaw))
 
+            async def on_dtmf(digit: str) -> None:
+                self._on_dtmf_event(call, digit)
+
             media_ws = MediaWebSocket(
                 url=media_url,
                 api_key=self._api_key,
                 on_audio=on_audio,
                 on_start=lambda info: self._on_media_start(call, info),
                 on_stop=lambda: self._on_media_stop(call, session),
+                on_dtmf=on_dtmf,
             )
 
             call._send_audio_fn = media_ws.send_audio
             call._send_clear_fn = media_ws.send_clear
             call._hangup_fn = lambda: media_ws.close()
+            call._send_dtmf_fn = media_ws.send_dtmf
+            call._media_ws = media_ws
+
+            self._call_sessions[call.call_id] = session
 
             await call._emit("call_start")
             await session.start(call)
@@ -270,6 +289,7 @@ class ClawOpsAgent:
                 await call._emit("call_end")
                 call._mark_ended()
                 self._active_sessions.pop(call.call_id, None)
+                self._call_sessions.pop(call.call_id, None)
 
     async def _on_media_start(self, call: CallSession, info: dict[str, Any]) -> None:
         log.info(f"Media stream started: {call.call_id}")
@@ -314,3 +334,30 @@ class ClawOpsAgent:
         if call:
             call._mark_ended()
         self._active_sessions.pop(call_id, None)
+        self._call_sessions.pop(call_id, None)
+
+    def _on_dtmf_event(self, call: CallSession, digit: str) -> None:
+        """DTMF 수신 시 호출. collector 또는 패시브 모드로 라우팅."""
+        asyncio.create_task(call._emit("dtmf", digit))
+
+        if call._dtmf_collector_active:
+            call._route_dtmf(digit)
+            asyncio.create_task(call.clear_audio())
+            return
+
+        self._passive_dtmf_buffer.append(digit)
+        self._passive_dtmf_call_id = call.call_id
+        if self._passive_dtmf_task and not self._passive_dtmf_task.done():
+            self._passive_dtmf_task.cancel()
+        self._passive_dtmf_task = asyncio.create_task(self._flush_passive_dtmf())
+
+    async def _flush_passive_dtmf(self) -> None:
+        """패시브 DTMF 버퍼를 flush하고 LLM에 주입한다."""
+        await asyncio.sleep(self._passive_dtmf_debounce_ms / 1000)
+        digits = "".join(self._passive_dtmf_buffer)
+        self._passive_dtmf_buffer.clear()
+        if digits and self._passive_dtmf_call_id:
+            session_obj = self._call_sessions.get(self._passive_dtmf_call_id)
+            if session_obj:
+                await session_obj.feed_dtmf(digits)
+        self._passive_dtmf_call_id = None
