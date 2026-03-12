@@ -19,7 +19,7 @@ class MessageCreateParams(TypedDict, total=False):
     body: Required[Annotated[str, PropertyInfo(alias="Body")]]
     """메시지 본문."""
 
-    type: Annotated[Literal["sms", "mms", "rcs", "kakao"], PropertyInfo(alias="Type")]
+    type: Annotated[Literal["sms", "lms", "mms", "rcs", "kakao"], PropertyInfo(alias="Type")]
     """메시지 유형. 기본값 sms."""
 
     subject: Annotated[str, PropertyInfo(alias="Subject")]
@@ -32,7 +32,7 @@ class MessageCreateParams(TypedDict, total=False):
 class MessageListParams(TypedDict, total=False):
     """메시지 목록 조회 요청 파라미터."""
 
-    type: Literal["sms", "mms", "rcs", "kakao"]
+    type: Literal["sms", "lms", "mms", "rcs", "kakao"]
     """메시지 유형으로 필터링."""
 
     status: Literal["queued", "sending", "sent", "failed", "received"]

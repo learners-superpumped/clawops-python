@@ -14,7 +14,8 @@ class Message(BaseModel):
     Attributes:
         message_id: 메시지 고유 식별자 (예: 'MG0123456789abcdef...').
         status: 메시지 상태.
-        type: 메시지 유형. sms, mms, rcs, kakao 중 하나.
+        type: 메시지 유형. sms, lms, mms, rcs, kakao 중 하나.
+        subject: 메시지 제목 (LMS/MMS 등에서 사용).
         to: 수신 번호.
         from_: 발신 번호.
         body: 메시지 본문.
@@ -26,9 +27,10 @@ class Message(BaseModel):
 
     message_id: str
     status: Literal["queued", "sending", "sent", "failed", "received"]
-    type: Literal["sms", "mms", "rcs", "kakao"]
+    type: Literal["sms", "lms", "mms", "rcs", "kakao"]
     to: str
     from_: str
+    subject: Optional[str] = None
     body: Optional[str] = None
     num_media: int = 0
     media_url: Optional[list[str]] = None
