@@ -15,7 +15,7 @@ pip install clawops
 pip install clawops[agent]
 
 # 특정 프로바이더 포함
-pip install clawops[agent,openai-llm,deepgram,elevenlabs,mcp]
+pip install clawops[agent,openai,deepgram,elevenlabs,mcp]
 
 # 전체 설치
 pip install clawops[agent-all]
