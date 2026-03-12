@@ -214,24 +214,20 @@ class OpenAIRealtime:
             await self._connection.response.create()
 
     async def _receive_loop(self) -> None:
-        if not self._ws:
+        if not self._connection:
             return
         try:
-            async for msg in self._ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    event = json.loads(msg.data)
-                    await self._handle_event(event)
-                elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
-                    break
+            async for event in self._connection:
+                await self._handle_event(event)
         except Exception as e:
             log.error(f"Realtime receive error: {e}")
         finally:
             await self._cleanup()
 
-    async def _handle_event(self, event: dict[str, Any]) -> None:
+    async def _handle_event(self, event: Any) -> None:
         if not self._call:
             return
-        event_type = event.get("type")
+        event_type = event.type
 
         if event_type == "response.audio.delta":
             if self._response_start_ts is None:
@@ -239,11 +235,10 @@ class OpenAIRealtime:
                 self._sent_audio_chunks = 0
                 self._diag_delta_count = 0
                 self._diag_last_delta_time = asyncio.get_event_loop().time()
-            if event.get("item_id"):
-                self._last_assistant_item = event["item_id"]
+            if event.item_id:
+                self._last_assistant_item = event.item_id
 
-            ulaw = base64.b64decode(event["delta"])
-            # 진단: OpenAI delta 도착 간격 (50개마다)
+            ulaw = base64.b64decode(event.delta)
             self._diag_delta_count = getattr(self, "_diag_delta_count", 0) + 1
             now = asyncio.get_event_loop().time()
             if self._diag_delta_count % 50 == 0:
@@ -258,9 +253,8 @@ class OpenAIRealtime:
                 self._diag_last_delta_time = now
             if self._recorder:
                 self._recorder.write_outbound(ulaw_to_pcm16(ulaw))
-            # 잔여 바이트와 합쳐서 항상 160B(20ms) 정렬된 프레임만 전송
             ulaw = self._audio_remainder + ulaw
-            chunk_size = 160  # 160B = 20ms at 8kHz ulaw
+            chunk_size = 160
             full_end = (len(ulaw) // chunk_size) * chunk_size
             for off in range(0, full_end, chunk_size):
                 await self._call.send_audio(ulaw[off : off + chunk_size])
@@ -268,7 +262,6 @@ class OpenAIRealtime:
             self._audio_remainder = ulaw[full_end:]
 
         elif event_type == "response.audio.done":
-            # 응답 오디오 종료 — 잔여 바이트를 silence 패딩하여 flush
             if self._audio_remainder:
                 padded = self._audio_remainder + b"\xff" * (160 - len(self._audio_remainder))
                 await self._call.send_audio(padded)
@@ -279,18 +272,18 @@ class OpenAIRealtime:
             await self._handle_truncation()
 
         elif event_type == "response.output_item.done":
-            item = event.get("item", {})
-            if item.get("type") == "function_call":
+            item = event.item
+            if item and item.type == "function_call":
                 await self._handle_tool_call(item)
 
         elif event_type == "conversation.item.input_audio_transcription.completed":
-            await self._call._emit("transcript", "user", event.get("transcript", ""))
+            await self._call._emit("transcript", "user", event.transcript or "")
 
         elif event_type == "response.audio_transcript.done":
-            await self._call._emit("transcript", "assistant", event.get("transcript", ""))
+            await self._call._emit("transcript", "assistant", event.transcript or "")
 
         elif event_type == "error":
-            log.error(f"OpenAI error: {event.get('error')}")
+            log.error(f"OpenAI error: {event.error}")
 
     async def _handle_tool_call(self, item: dict[str, Any]) -> None:
         func_name = item.get("name", "")
