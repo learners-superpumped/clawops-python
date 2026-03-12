@@ -82,6 +82,7 @@ class MediaWebSocket:
         self._session: aiohttp.ClientSession | None = None
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._send_task: asyncio.Task[None] | None = None
+        self._mark_waiters: dict[str, asyncio.Event] = {}
 
     async def connect(self) -> None:
         self._session = aiohttp.ClientSession()
@@ -106,6 +107,10 @@ class MediaWebSocket:
                     elif event == "dtmf":
                         if self._on_dtmf:
                             await self._on_dtmf(parse_dtmf_event(data)["digit"])
+                    elif event == "mark":
+                        mark_name = data.get("mark", {}).get("name", "")
+                        if mark_name in self._mark_waiters:
+                            self._mark_waiters.pop(mark_name).set()
                     elif event == "stop":
                         await self._on_stop()
                         break
@@ -145,6 +150,17 @@ class MediaWebSocket:
     def is_connected(self) -> bool:
         """WebSocket이 연결되어 있는지 확인한다."""
         return self._ws is not None and not self._ws.closed
+
+    async def wait_for_mark(self, name: str, timeout: float = 5.0) -> None:
+        """Wait for a named mark to be echoed back by the server."""
+        if not self.is_connected:
+            return
+        evt = asyncio.Event()
+        self._mark_waiters[name] = evt
+        try:
+            await asyncio.wait_for(evt.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            self._mark_waiters.pop(name, None)
 
     async def _send_loop(self) -> None:
         """오디오 청크를 플랫폼으로 전송 (pacing은 플랫폼이 처리)."""

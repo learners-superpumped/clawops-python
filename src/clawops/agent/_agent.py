@@ -273,7 +273,13 @@ class ClawOpsAgent:
 
             call._send_audio_fn = media_ws.send_audio
             call._send_clear_fn = media_ws.send_clear
-            call._hangup_fn = lambda: media_ws.close()
+            async def _graceful_hangup() -> None:
+                import time
+                mark_name = f"hangup-{int(time.time() * 1000)}"
+                await media_ws.send_mark(mark_name)
+                await media_ws.wait_for_mark(mark_name, timeout=5.0)
+                await media_ws.close()
+            call._hangup_fn = _graceful_hangup
             call._send_dtmf_fn = media_ws.send_dtmf
             call._media_ws = media_ws
 
