@@ -314,7 +314,7 @@ class GeminiRealtime:
             if input_transcription:
                 text = getattr(input_transcription, "text", "")
                 if text:
-                    log.info(f"[TRANSCRIPT-USER] {text}")
+                    log.debug(f"[Transcript] user: {text}")
                     await self._call._emit("transcript", "user", text)
 
             # ── 출력 트랜스크립트 ──
@@ -322,7 +322,7 @@ class GeminiRealtime:
             if output_transcription:
                 text = getattr(output_transcription, "text", "")
                 if text:
-                    log.info(f"[TRANSCRIPT-ASSISTANT] {text}")
+                    log.debug(f"[Transcript] assistant: {text}")
                     await self._call._emit("transcript", "assistant", text)
 
         # ── Tool call ──

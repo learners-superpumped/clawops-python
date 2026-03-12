@@ -231,10 +231,14 @@ class OpenAIRealtime:
                 await self._handle_tool_call(item)
 
         elif event_type == "conversation.item.input_audio_transcription.completed":
-            await self._call._emit("transcript", "user", event.transcript or "")
+            transcript = event.transcript or ""
+            log.debug(f"[Transcript] user: {transcript}")
+            await self._call._emit("transcript", "user", transcript)
 
         elif event_type == "response.output_audio_transcript.done":
-            await self._call._emit("transcript", "assistant", event.transcript or "")
+            transcript = event.transcript or ""
+            log.debug(f"[Transcript] assistant: {transcript}")
+            await self._call._emit("transcript", "assistant", transcript)
 
         elif event_type == "error":
             log.error(f"OpenAI error: {event.error}")
