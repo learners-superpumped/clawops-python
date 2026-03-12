@@ -122,6 +122,7 @@ class ClawOpsAgent:
             self._control_ws_task.cancel()
             self._control_ws_task = None
         self._active_sessions.clear()
+        self._call_sessions.clear()
         log.info("ClawOpsAgent disconnected")
 
     async def _ensure_control_ws(self) -> None:
