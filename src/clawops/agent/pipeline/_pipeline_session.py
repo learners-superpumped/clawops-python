@@ -246,6 +246,7 @@ class PipelineSession:
 
     async def _generate_greeting(self) -> None:
         await asyncio.sleep(0.5)
+        self._messages.append({"role": "user", "content": "[통화 시작]"})
         self._current_response_task = asyncio.create_task(self._respond())
 
     async def _respond(self) -> None:
@@ -261,14 +262,17 @@ class PipelineSession:
             if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
                 tool_schemas.append(SEND_DTMF_TOOL)
 
+            pending_tool_calls: dict[str, Any] | None = None
+
             async def text_stream() -> AsyncIterator[str]:
+                nonlocal pending_tool_calls
                 buffer = ""
                 async for token in self._llm.generate(self._messages, tools=tool_schemas):
                     if token.startswith('{"type":"tool_calls"') or token.startswith('{"type": "tool_calls"'):
                         if buffer.strip():
                             yield buffer
                             buffer = ""
-                        await self._handle_tool_calls(json.loads(token))
+                        pending_tool_calls = json.loads(token)
                         return
                     buffer += token
                     if _SENTENCE_END.search(buffer):
@@ -312,21 +316,27 @@ class PipelineSession:
             assistant_text = "".join(text_chunks)
             if assistant_text.strip():
                 log.info(f"Assistant: {assistant_text[:100]}")
-                self._messages.append({"role": "assistant", "content": assistant_text})
                 if self._call:
                     await self._call._emit("transcript", "assistant", assistant_text)
+
+            if pending_tool_calls is not None:
+                pre_text = assistant_text.strip() or None
+                await self._handle_tool_calls(pending_tool_calls, pre_text=pre_text)
+            else:
+                if assistant_text.strip():
+                    self._messages.append({"role": "assistant", "content": assistant_text})
 
         except asyncio.CancelledError:
             pass
         except Exception as e:
             log.error(f"Response error: {e}")
 
-    async def _handle_tool_calls(self, data: dict[str, Any]) -> None:
+    async def _handle_tool_calls(self, data: dict[str, Any], *, pre_text: str | None = None) -> None:
         tool_calls = data.get("tool_calls", [])
         self._messages.append(
             {
                 "role": "assistant",
-                "content": None,
+                "content": pre_text,
                 "tool_calls": [
                     {
                         "id": tc["id"],
