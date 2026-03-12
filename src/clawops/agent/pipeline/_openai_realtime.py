@@ -154,16 +154,9 @@ class OpenAIRealtime:
         self._llm_span_ctx = llm_session_span(self._config.model, voice=self._config.voice)
         self._llm_span = self._llm_span_ctx.__enter__()
 
-        url = OPENAI_REALTIME_URL.format(model=self._config.model)
-
-        self._http = aiohttp.ClientSession()
-        self._ws = await self._http.ws_connect(
-            url,
-            headers={
-                "Authorization": f"Bearer {self._config.openai_api_key}",
-                "OpenAI-Beta": "realtime=v1",
-            },
-        )
+        self._client = AsyncOpenAI(api_key=self._config.openai_api_key)
+        manager = self._client.realtime.connect(model=self._config.model)
+        self._connection = await manager.enter()
         log.info("OpenAI Realtime connected")
 
         tool_schemas = self._tools.to_openai_tools()
@@ -175,32 +168,29 @@ class OpenAIRealtime:
         if self._builtin_tools is None or BuiltinTool.SEND_DTMF in self._builtin_tools:
             tool_schemas.append(SEND_DTMF_TOOL)
 
-        await self._send(
-            {
-                "type": "session.update",
-                "session": {
-                    "modalities": ["text", "audio"],
-                    "voice": self._config.voice,
-                    "instructions": self._config.system_prompt,
-                    "input_audio_format": "g711_ulaw",
-                    "output_audio_format": "g711_ulaw",
-                    "input_audio_transcription": {
-                        "model": "gpt-4o-mini-transcribe",
-                        "language": self._config.language,
-                    },
-                    "input_audio_noise_reduction": {"type": "far_field"},
-                    "turn_detection": {
-                        "type": "semantic_vad",
-                        "interrupt_response": True,
-                        "eagerness": self._config.eagerness,
-                    },
-                    "tools": tool_schemas,
+        await self._connection.session.update(
+            session={
+                "modalities": ["text", "audio"],
+                "voice": self._config.voice,
+                "instructions": self._config.system_prompt,
+                "input_audio_format": "g711_ulaw",
+                "output_audio_format": "g711_ulaw",
+                "input_audio_transcription": {
+                    "model": "gpt-4o-mini-transcribe",
+                    "language": self._config.language,
                 },
+                "input_audio_noise_reduction": {"type": "far_field"},
+                "turn_detection": {
+                    "type": "semantic_vad",
+                    "interrupt_response": True,
+                    "eagerness": self._config.eagerness,
+                },
+                "tools": tool_schemas,
             }
         )
 
         if self._config.greeting:
-            await self._send({"type": "response.create"})
+            await self._connection.response.create()
 
         self._tasks.append(asyncio.create_task(self._receive_loop()))
 
