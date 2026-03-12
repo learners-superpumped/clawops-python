@@ -193,6 +193,7 @@ class OpenAIRealtime:
                     },
                 },
                 "tools": tool_schemas,
+                "tracing": "auto",
             }
         )
 
