@@ -196,27 +196,22 @@ class OpenAIRealtime:
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
         self._latest_media_ts = timestamp
-        # Agent 경로: 플랫폼에서 ulaw 직통으로 받으므로 변환 불필요
-        await self._send(
-            {
-                "type": "input_audio_buffer.append",
-                "audio": base64.b64encode(audio).decode(),
-            }
-        )
+        if self._connection:
+            await self._connection.input_audio_buffer.append(
+                audio=base64.b64encode(audio).decode(),
+            )
 
     async def feed_dtmf(self, digits: str) -> None:
         """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
-        await self._send(
-            {
-                "type": "conversation.item.create",
-                "item": {
+        if self._connection:
+            await self._connection.conversation.item.create(
+                item={
                     "type": "message",
                     "role": "user",
                     "content": [{"type": "input_text", "text": f"[DTMF 입력: {digits}]"}],
-                },
-            }
-        )
-        await self._send({"type": "response.create"})
+                }
+            )
+            await self._connection.response.create()
 
     async def _receive_loop(self) -> None:
         if not self._ws:
