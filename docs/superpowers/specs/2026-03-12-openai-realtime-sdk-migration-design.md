@@ -154,7 +154,7 @@ openai = ["clawops[agent]", "openai>=1.76.0"]
 - `OpenAIRealtimeConfig` dataclass (하위 호환)
 - 오디오 처리 로직 (160B 프레임 정렬, ulaw→pcm16 변환, silence 패딩)
 - 진단 로깅 (delta 간격 측정)
-- Tool call 핸들링 (hang_up, collect_dtmf, send_dtmf, custom tools)
+- Tool call 핸들링 (hang_up, collect_dtmf, send_dtmf, custom tools) — 내부의 모든 `_send()` 호출은 `self._connection.conversation.item.create()` 및 `self._connection.response.create()`로 변환
 - Tracing spans (`llm_session_span`, `tool_call_span`)
 - `AudioRecorder` 연동
 - Session Protocol 인터페이스 (`start`, `feed_audio`, `feed_dtmf`, `stop`)
