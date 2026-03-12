@@ -17,6 +17,47 @@ log = logging.getLogger("clawops.agent.pipeline")
 
 _SENTENCE_END = re.compile(r'[.!?。！？]\s*$')
 
+HANG_UP_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "hang_up",
+        "description": "End the phone call.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+COLLECT_DTMF_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "collect_dtmf",
+        "description": "사용자로부터 DTMF(전화 키패드) 입력을 수집합니다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "max_digits": {"type": "integer", "description": "수집할 최대 자릿수"},
+                "finish_on_key": {"type": "string", "description": "입력 종료 키 (기본: #)"},
+                "timeout": {"type": "integer", "description": "입력 대기 시간(초, 기본: 5)"},
+            },
+            "required": ["max_digits"],
+        },
+    },
+}
+
+SEND_DTMF_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "send_dtmf",
+        "description": "DTMF 신호를 전송합니다. ARS 메뉴 탐색이나 내선번호 입력 시 사용합니다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "digits": {"type": "string", "description": "전송할 번호 (0-9, *, #). 'w'는 500ms 대기, 'W'는 1000ms 대기."},
+            },
+            "required": ["digits"],
+        },
+    },
+}
+
 
 def _to_chat_tools(realtime_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Realtime API 포맷 tool 스키마를 Chat Completions 포맷으로 변환.
@@ -58,6 +99,7 @@ class PipelineSession:
         self._tts = tts
         self._system_prompt = system_prompt
         self._tools = tool_registry or ToolRegistry()
+        self._dtmf_tools: bool = True
         self._greeting = greeting
         self._language = language
         self._recorder = recorder
@@ -74,6 +116,10 @@ class PipelineSession:
     def set_tool_registry(self, registry: ToolRegistry) -> None:
         """콜별로 fork된 ToolRegistry를 주입한다."""
         self._tools = registry
+
+    def set_dtmf_tools(self, enabled: bool) -> None:
+        """DTMF tool 등록 여부를 설정한다."""
+        self._dtmf_tools = enabled
 
     def set_recorder(self, recorder: AudioRecorder) -> None:
         """콜별로 생성된 AudioRecorder를 주입한다."""
@@ -95,7 +141,11 @@ class PipelineSession:
 
     async def feed_dtmf(self, digits: str) -> None:
         """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
-        pass
+        self._messages.append({
+            "role": "user",
+            "content": f"[DTMF 입력: {digits}]",
+        })
+        await self._respond()
 
     async def stop(self) -> None:
         self._running = False
@@ -196,14 +246,9 @@ class PipelineSession:
             return
         try:
             tool_schemas = _to_chat_tools(self._tools.to_openai_tools())
-            tool_schemas.append({
-                "type": "function",
-                "function": {
-                    "name": "hang_up",
-                    "description": "End the phone call.",
-                    "parameters": {"type": "object", "properties": {}},
-                },
-            })
+            tool_schemas.append(HANG_UP_TOOL)
+            if self._dtmf_tools:
+                tool_schemas += [COLLECT_DTMF_TOOL, SEND_DTMF_TOOL]
 
             async def text_stream() -> AsyncIterator[str]:
                 buffer = ""
@@ -286,6 +331,40 @@ class PipelineSession:
                 if self._call:
                     await self._call.hangup()
                 return
+            elif func_name == "collect_dtmf":
+                if self._call:
+                    try:
+                        args = json.loads(tc["function"]["arguments"])
+                        result = await self._call.collect_dtmf(
+                            max_digits=args.get("max_digits", 4),
+                            finish_on_key=args.get("finish_on_key", "#"),
+                            timeout=args.get("timeout", 5),
+                        )
+                        self._messages.append({
+                            "role": "tool", "tool_call_id": call_id,
+                            "content": result if result else "(타임아웃 - 입력 없음)",
+                        })
+                    except Exception as e:
+                        self._messages.append({
+                            "role": "tool", "tool_call_id": call_id,
+                            "content": f"Error: {e}",
+                        })
+                continue
+            elif func_name == "send_dtmf":
+                if self._call:
+                    try:
+                        args = json.loads(tc["function"]["arguments"])
+                        await self._call.send_dtmf_sequence(args.get("digits", ""))
+                        self._messages.append({
+                            "role": "tool", "tool_call_id": call_id,
+                            "content": "sent",
+                        })
+                    except Exception as e:
+                        self._messages.append({
+                            "role": "tool", "tool_call_id": call_id,
+                            "content": f"Error: {e}",
+                        })
+                continue
             try:
                 args = json.loads(tc["function"]["arguments"])
                 result = await self._tools.call(func_name, args)
