@@ -1,4 +1,5 @@
 """CallSession: per-call 상태 관리."""
+
 from __future__ import annotations
 
 import asyncio
@@ -39,7 +40,7 @@ class CallSession:
         self._send_dtmf_fn: Callable[[str], Awaitable[None]] | None = None
         self._media_ws: Any | None = None  # is_connected 체크용
         self._dtmf_collector_active: bool = False
-        self._dtmf_queue: asyncio.Queue[str] | None = None
+        self._dtmf_queue: asyncio.Queue[str] = asyncio.Queue()
 
     @property
     def duration(self) -> float:
@@ -74,9 +75,9 @@ class CallSession:
             await handler(self, *args)
 
     def _route_dtmf(self, digit: str) -> None:
-        """DTMF digit을 collector 큐로 라우팅한다 (내부 전용)."""
-        if self._dtmf_collector_active and self._dtmf_queue is not None:
-            self._dtmf_queue.put_nowait(digit)
+        """DTMF digit을 큐로 라우팅한다 (내부 전용).
+        collector가 아직 활성화되기 전에 도착한 digit도 버퍼링한다."""
+        self._dtmf_queue.put_nowait(digit)
 
     async def collect_dtmf(
         self,
@@ -90,15 +91,13 @@ class CallSession:
             raise RuntimeError("이미 DTMF 수집 중입니다")
 
         self._dtmf_collector_active = True
-        self._dtmf_queue = asyncio.Queue()
+        # Don't create new queue — drain pre-buffered digits first
         collected: list[str] = []
 
         try:
             while len(collected) < max_digits:
                 try:
-                    digit = await asyncio.wait_for(
-                        self._dtmf_queue.get(), timeout=timeout
-                    )
+                    digit = await asyncio.wait_for(self._dtmf_queue.get(), timeout=timeout)
                     if digit == finish_on_key:
                         break
                     collected.append(digit)
@@ -111,7 +110,9 @@ class CallSession:
                     break
         finally:
             self._dtmf_collector_active = False
-            self._dtmf_queue = None
+            # Drain remaining queue to prevent stale digits in next collect
+            while not self._dtmf_queue.empty():
+                self._dtmf_queue.get_nowait()
 
         result = "".join(collected)
         if secure:

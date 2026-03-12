@@ -2,6 +2,7 @@
 
 Control WS 연결, per-call Media WS 생성, Session 관리를 조합한다.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -87,6 +88,7 @@ class ClawOpsAgent:
         def decorator(fn: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[None]]:
             self._event_handlers.setdefault(event, []).append(fn)
             return fn
+
         return decorator
 
     async def connect(self) -> None:
@@ -151,6 +153,7 @@ class ClawOpsAgent:
         await self.connect()
 
         import aiohttp as _aiohttp
+
         url = f"{self._base_url}/v1/accounts/{self._account_id}/calls"
         body = {"To": to, "From": self._from_number, "Timeout": timeout}
         headers = {
@@ -230,6 +233,7 @@ class ClawOpsAgent:
                 log.debug("Starting %d MCP server(s) for call %s", len(self._mcp_servers), call.call_id)
                 for server_config in self._mcp_servers:
                     from .mcp._stdio import MCPServerStdio as _Stdio
+
                     if isinstance(server_config, _Stdio):
                         span_ctx = mcp_connect_span("stdio", command=server_config.command)
                     else:
@@ -252,6 +256,7 @@ class ClawOpsAgent:
                 await session.feed_audio(ulaw, ts)
                 if recorder:
                     from ._audio import ulaw_to_pcm16
+
                     recorder.write_inbound(ulaw_to_pcm16(ulaw))
 
             async def on_dtmf(digit: str) -> None:
@@ -341,8 +346,10 @@ class ClawOpsAgent:
         """DTMF 수신 시 호출. collector 또는 패시브 모드로 라우팅."""
         asyncio.create_task(call._emit("dtmf", digit))
 
+        # Always route to queue — collector may not be active yet (tool call timing)
+        call._route_dtmf(digit)
+
         if call._dtmf_collector_active:
-            call._route_dtmf(digit)
             asyncio.create_task(call.clear_audio())
             return
 
