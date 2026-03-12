@@ -21,7 +21,7 @@
 **Files:**
 - Modify: `pyproject.toml:55-56,72-74`
 
-- [ ] **Step 1: Add unified openai extra and keep backward compat aliases**
+- [ ] **Step 1: Replace openai-realtime and openai-llm with unified openai extra**
 
 ```toml
 # Replace lines 55-56:
@@ -29,8 +29,6 @@
 # openai-llm = ["clawops[agent]", "openai>=1.0.0"]
 # With:
 openai = ["clawops[agent]", "openai>=1.76.0"]
-openai-realtime = ["clawops[openai]"]  # backward compat alias
-openai-llm = ["clawops[openai]"]  # backward compat alias
 ```
 
 - [ ] **Step 2: Update agent-all to use unified openai extra**
