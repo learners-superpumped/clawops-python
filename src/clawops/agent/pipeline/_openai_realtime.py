@@ -363,17 +363,14 @@ class OpenAIRealtime:
         if not self._last_assistant_item or self._response_start_ts is None:
             return
 
-        # 실제 송신한 오디오 양 기반으로 계산 (160B = 20ms per ulaw chunk)
         audio_end_ms = max(0, self._sent_audio_chunks * 20)
 
-        await self._send(
-            {
-                "type": "conversation.item.truncate",
-                "item_id": self._last_assistant_item,
-                "content_index": 0,
-                "audio_end_ms": audio_end_ms,
-            }
-        )
+        if self._connection:
+            await self._connection.conversation.item.truncate(
+                item_id=self._last_assistant_item,
+                content_index=0,
+                audio_end_ms=audio_end_ms,
+            )
 
         if self._call:
             await self._call.clear_audio()
@@ -383,31 +380,26 @@ class OpenAIRealtime:
         self._sent_audio_chunks = 0
         self._audio_remainder = b""
 
-    async def _send(self, data: dict[str, Any]) -> None:
-        if self._ws and not self._ws.closed:
-            try:
-                await self._ws.send_str(json.dumps(data))
-            except Exception as e:
-                log.error(f"WebSocket send failed ({data.get('type')}): {e}")
-
     async def stop(self) -> None:
+        # 1) 연결 닫기 → receive loop의 async for가 자연 종료
+        if self._connection:
+            await self._connection.close()
+        # 2) 남은 태스크 정리
         for task in self._tasks:
             if not task.done():
                 task.cancel()
         self._tasks.clear()
-        await self._cleanup()
+        # 3) LLM span 종료
+        self._close_llm_span()
 
     async def _cleanup(self) -> None:
-        if self._ws and not self._ws.closed:
-            await self._ws.close()
-        self._ws = None
-        if self._http:
-            await self._http.close()
-        self._http = None
-        # Close LLM session span, propagating any active exception info
-        if self._llm_span_ctx:
-            import sys
+        if self._connection:
+            await self._connection.close()
+            self._connection = None
+        self._close_llm_span()
 
+    def _close_llm_span(self) -> None:
+        if self._llm_span_ctx:
             exc_info = sys.exc_info()
             self._llm_span_ctx.__exit__(*exc_info)
             self._llm_span_ctx = None
