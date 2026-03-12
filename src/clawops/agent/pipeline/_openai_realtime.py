@@ -285,10 +285,10 @@ class OpenAIRealtime:
         elif event_type == "error":
             log.error(f"OpenAI error: {event.error}")
 
-    async def _handle_tool_call(self, item: dict[str, Any]) -> None:
-        func_name = item.get("name", "")
-        call_id = item.get("call_id", "")
-        log.info(f"Tool call: {func_name}({item.get('arguments')})")
+    async def _handle_tool_call(self, item: Any) -> None:
+        func_name = item.name or ""
+        call_id = item.call_id or ""
+        log.info(f"Tool call: {func_name}({item.arguments})")
 
         if func_name == "hang_up":
             if self._call:
@@ -296,9 +296,9 @@ class OpenAIRealtime:
             return
 
         if func_name == "collect_dtmf":
-            if self._call:
+            if self._call and self._connection:
                 try:
-                    args = json.loads(item.get("arguments", "{}"))
+                    args = json.loads(item.arguments or "{}")
                     result = await self._call.collect_dtmf(
                         max_digits=args.get("max_digits", 4),
                         finish_on_key=args.get("finish_on_key", "#"),
@@ -306,46 +306,42 @@ class OpenAIRealtime:
                     )
                 except Exception as e:
                     result = f"Error: {e}"
-                await self._send(
-                    {
-                        "type": "conversation.item.create",
-                        "item": {
-                            "type": "function_call_output",
-                            "call_id": call_id,
-                            "output": result if result else "(타임아웃 - 입력 없음)",
-                        },
+                await self._connection.conversation.item.create(
+                    item={
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": result if result else "(타임아웃 - 입력 없음)",
                     }
                 )
-                await self._send({"type": "response.create"})
+                await self._connection.response.create()
             return
 
         if func_name == "send_dtmf":
-            if self._call:
+            if self._call and self._connection:
                 try:
-                    args = json.loads(item.get("arguments", "{}"))
+                    args = json.loads(item.arguments or "{}")
                     await self._call.send_dtmf_sequence(args.get("digits", ""))
                     result = "sent"
                 except Exception as e:
                     result = f"Error: {e}"
-                await self._send(
-                    {
-                        "type": "conversation.item.create",
-                        "item": {
-                            "type": "function_call_output",
-                            "call_id": call_id,
-                            "output": result,
-                        },
+                await self._connection.conversation.item.create(
+                    item={
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": result,
                     }
                 )
-                await self._send({"type": "response.create"})
+                await self._connection.response.create()
             return
 
-        # Determine source
+        if not self._connection:
+            return
+
         source = "mcp" if func_name in self._tools._mcp_tools else "local"
 
         with tool_call_span(func_name, source):
             try:
-                args = json.loads(item.get("arguments", "{}"))
+                args = json.loads(item.arguments or "{}")
                 result = await self._tools.call(func_name, args)
             except Exception as e:
                 log.error(f"Tool call failed: {func_name}: {e}")
@@ -353,18 +349,15 @@ class OpenAIRealtime:
 
         log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
 
-        await self._send(
-            {
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": str(result),
-                },
+        await self._connection.conversation.item.create(
+            item={
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": str(result),
             }
         )
         log.debug(f"Sent function_call_output for {func_name}, requesting response")
-        await self._send({"type": "response.create"})
+        await self._connection.response.create()
 
     async def _handle_truncation(self) -> None:
         if not self._last_assistant_item or self._response_start_ts is None:
