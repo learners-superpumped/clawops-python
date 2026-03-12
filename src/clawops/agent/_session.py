@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Any, Callable, Awaitable
+
+log = logging.getLogger("clawops.agent")
 
 
 class CallSession:
@@ -31,6 +34,12 @@ class CallSession:
 
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
         self._ended_event = asyncio.Event()
+
+        # DTMF
+        self._send_dtmf_fn: Callable[[str], Awaitable[None]] | None = None
+        self._media_ws: Any | None = None  # is_connected 체크용
+        self._dtmf_collector_active: bool = False
+        self._dtmf_queue: asyncio.Queue[str] | None = None
 
     @property
     def duration(self) -> float:
@@ -63,3 +72,67 @@ class CallSession:
     async def _emit(self, event: str, *args: Any) -> None:
         for handler in self._event_handlers.get(event, []):
             await handler(self, *args)
+
+    def _route_dtmf(self, digit: str) -> None:
+        """DTMF digit을 collector 큐로 라우팅한다 (내부 전용)."""
+        if self._dtmf_collector_active and self._dtmf_queue is not None:
+            self._dtmf_queue.put_nowait(digit)
+
+    async def collect_dtmf(
+        self,
+        max_digits: int,
+        finish_on_key: str = "#",
+        timeout: float = 5,
+        secure: bool = False,
+    ) -> str:
+        """DTMF 입력을 수집한다."""
+        if self._dtmf_collector_active:
+            raise RuntimeError("이미 DTMF 수집 중입니다")
+
+        self._dtmf_collector_active = True
+        self._dtmf_queue = asyncio.Queue()
+        collected: list[str] = []
+
+        try:
+            while len(collected) < max_digits:
+                try:
+                    digit = await asyncio.wait_for(
+                        self._dtmf_queue.get(), timeout=timeout
+                    )
+                    if digit == finish_on_key:
+                        break
+                    collected.append(digit)
+                except asyncio.TimeoutError:
+                    while not self._dtmf_queue.empty() and len(collected) < max_digits:
+                        d = self._dtmf_queue.get_nowait()
+                        if d == finish_on_key:
+                            break
+                        collected.append(d)
+                    break
+        finally:
+            self._dtmf_collector_active = False
+            self._dtmf_queue = None
+
+        result = "".join(collected)
+        if secure:
+            log.info(f"DTMF collected: {'*' * len(result)} ({len(result)} digits, secure)")
+        else:
+            log.info(f"DTMF collected: {result}")
+        return result
+
+    async def send_dtmf_sequence(self, digits: str) -> None:
+        """여러 DTMF digit을 순서대로 전송한다."""
+        if not self._send_dtmf_fn:
+            raise RuntimeError("DTMF 전송 함수가 바인딩되지 않았습니다")
+        for ch in digits:
+            if self._media_ws and not self._media_ws.is_connected:
+                raise ConnectionError("DTMF 전송 중 연결이 끊어졌습니다")
+            if ch == "w":
+                await asyncio.sleep(0.5)
+            elif ch == "W":
+                await asyncio.sleep(1.0)
+            elif ch in "0123456789*#":
+                if self._send_dtmf_fn:
+                    await self._send_dtmf_fn(ch)
+            else:
+                raise ValueError(f"유효하지 않은 DTMF 문자: {ch}")
