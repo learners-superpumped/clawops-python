@@ -10,10 +10,12 @@ import base64
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass
 from typing import Any
 
-import aiohttp
+from openai import AsyncOpenAI
+from openai.resources.realtime.realtime import AsyncRealtimeConnection
 
 from .._audio import ulaw_to_pcm16
 from .._builtin_tools import BuiltinTool
@@ -23,8 +25,6 @@ from .._tool import ToolRegistry
 from ..tracing._spans import tool_call_span, llm_session_span
 
 log = logging.getLogger("clawops.agent")
-
-OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model={model}"
 
 HANG_UP_TOOL = {
     "type": "function",
@@ -122,8 +122,8 @@ class OpenAIRealtime:
         )
         self._tools = tool_registry or ToolRegistry()
         self._builtin_tools: set[BuiltinTool] | None = None
-        self._ws: aiohttp.ClientWebSocketResponse | None = None
-        self._http: aiohttp.ClientSession | None = None
+        self._client: AsyncOpenAI | None = None
+        self._connection: AsyncRealtimeConnection | None = None
         self._call: CallSession | None = None
         self._last_assistant_item: str | None = None
         self._response_start_ts: int | None = None

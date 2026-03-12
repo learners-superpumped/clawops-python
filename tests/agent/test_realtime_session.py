@@ -49,6 +49,17 @@ def test_openai_realtime_defaults():
     assert session._config.greeting is True
 
 
+def test_openai_realtime_init_creates_client():
+    """AsyncOpenAI 클라이언트가 올바르게 생성되는지 확인."""
+    session = OpenAIRealtime(
+        api_key="sk-test",
+        system_prompt="test",
+    )
+    assert session._config.openai_api_key == "sk-test"
+    assert not hasattr(session, '_http')
+    assert session._connection is None
+
+
 # 하위 호환 테스트
 def test_legacy_imports():
     from clawops.agent.plugins.openai_realtime import RealtimeConfig, RealtimeSession
