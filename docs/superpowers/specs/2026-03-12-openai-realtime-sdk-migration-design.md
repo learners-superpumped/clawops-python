@@ -36,6 +36,39 @@ await self._connection.close()
 
 SDK의 `AsyncRealtimeConnectionManager`는 `.enter()` 메서드를 공식 지원한다. `async with` 없이 수동 lifecycle 관리가 가능하며, 문서에도 명시되어 있다.
 
+**`stop()` flow:** 연결을 먼저 닫고 태스크를 정리한다. `connection.close()`가 호출되면 SDK의 async iterator가 자연스럽게 종료되므로, task cancel보다 close를 먼저 수행하는 것이 안전하다.
+
+```python
+async def stop(self):
+    # 1) 연결 닫기 → receive loop의 async for가 자연 종료
+    if self._connection:
+        await self._connection.close()
+    # 2) 혹시 남은 태스크 정리
+    for task in self._tasks:
+        if not task.done():
+            task.cancel()
+    self._tasks.clear()
+    # 3) LLM span 종료
+    self._close_llm_span()
+```
+
+**`_cleanup()` 재설계:** `_receive_loop`의 finally에서 호출되던 `_cleanup()`은 SDK connection close + LLM span 종료로 단순화된다. `connection.close()`는 idempotent하므로 `stop()`과 `_receive_loop` finally에서 중복 호출해도 안전하다. LLM span 종료 시 `sys.exc_info()`를 통한 예외 전파는 그대로 유지한다.
+
+```python
+async def _cleanup(self):
+    if self._connection:
+        await self._connection.close()
+        self._connection = None
+    self._close_llm_span()
+
+def _close_llm_span(self):
+    if self._llm_span_ctx:
+        import sys
+        self._llm_span_ctx.__exit__(*sys.exc_info())
+        self._llm_span_ctx = None
+        self._llm_span = None
+```
+
 ### 2. Event Sending (raw dict → SDK methods)
 
 | 현재 (`_send` raw dict) | SDK 메서드 |
@@ -45,6 +78,9 @@ SDK의 `AsyncRealtimeConnectionManager`는 `.enter()` 메서드를 공식 지원
 | `{"type": "input_audio_buffer.append", "audio": ...}` | `connection.input_audio_buffer.append(audio=...)` |
 | `{"type": "conversation.item.create", "item": {...}}` | `connection.conversation.item.create(item={...})` |
 | `{"type": "conversation.item.truncate", ...}` | `connection.conversation.item.truncate(item_id=..., content_index=..., audio_end_ms=...)` |
+| `{"type": "conversation.item.create", "item": {"type": "function_call_output", ...}}` | `connection.conversation.item.create(item={"type": "function_call_output", "call_id": ..., "output": ...})` |
+
+**Audio encoding:** `input_audio_buffer.append(audio=...)` 는 base64 인코딩된 문자열을 기대한다. 현재 코드의 `base64.b64encode(audio).decode()` 패턴을 그대로 유지. 수신 시 `event.delta`도 base64 문자열이므로 `base64.b64decode(event.delta)` 유지.
 
 `_send()` 헬퍼 메서드는 제거된다.
 
@@ -62,6 +98,8 @@ async for event in self._connection:
 ```
 
 이벤트가 typed object로 전달되므로 `event.get("type")` → `event.type`, `event.get("delta")` → `event.delta` 등으로 변경.
+
+**에러 처리:** SDK의 async iterator는 연결이 끊어지면 예외를 raise한다. 현재 `_receive_loop`의 `try/except/finally` 패턴을 유지하되, `aiohttp.WSMsgType.CLOSE/ERROR` 분기는 제거한다. SDK가 연결 종료를 예외로 전파하므로 별도 체크가 불필요.
 
 ### 4. Event Handling Mapping
 
@@ -100,6 +138,8 @@ openai = ["clawops[agent]", "openai>=1.76.0"]
 ```
 
 다른 openai-compatible provider들 (`ollama`, `mistral`, `groq` 등)은 `openai>=1.0.0`을 그대로 유지.
+
+`openai>=1.76.0`인 이유: `realtime.connect()`의 `.enter()` 메서드와 stable (non-beta) Realtime API 지원이 이 버전부터 안정적으로 제공된다 (`openai.types.realtime` 모듈이 `openai.types.beta.realtime`에서 승격).
 
 ### 6. Removed Code
 
