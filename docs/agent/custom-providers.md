@@ -19,10 +19,10 @@ class SpeechEvent:
     transcript: str
 ```
 
-| 타입 | 용도 | transcript |
-|------|------|-----------|
+| 타입      | 용도                             | transcript                 |
+| --------- | -------------------------------- | -------------------------- |
 | `interim` | Barge-in 트리거 (AI 오디오 중단) | 빈 문자열 또는 부분 텍스트 |
-| `final` | 확정 텍스트로 응답 생성 | 완성된 발화 텍스트 |
+| `final`   | 확정 텍스트로 응답 생성          | 완성된 발화 텍스트         |
 
 ---
 
@@ -320,18 +320,21 @@ agent = ClawOpsAgent(
 커스텀 제공자 구현 시 확인할 항목:
 
 ### STT
+
 - [ ] `transcribe()`가 `AsyncIterator[SpeechEvent]`를 반환하는가?
 - [ ] `interim` 이벤트를 발생시키는가? (barge-in에 필요)
 - [ ] `final` 이벤트의 transcript가 빈 문자열이 아닌가?
 - [ ] 입력 오디오가 PCM16 16kHz임을 전제로 하는가?
 
 ### LLM
+
 - [ ] `generate()`가 `AsyncIterator[str]`를 반환하는가?
 - [ ] messages 포맷이 OpenAI Chat Completions 호환인가?
 - [ ] Tool call 시 올바른 JSON 포맷(`{"type":"tool_calls",...}`)을 yield하는가?
 - [ ] Tool call의 `id` 필드가 고유한가?
 
 ### TTS
+
 - [ ] `synthesize()`가 `AsyncIterator[bytes]`를 반환하는가?
 - [ ] 출력이 raw PCM16 (WAV 헤더 없음)인가?
 - [ ] `sample_rate` 속성을 제공하는가?
