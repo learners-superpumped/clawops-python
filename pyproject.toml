@@ -52,7 +52,7 @@ dev = [
 
 # Agent
 agent = ["aiohttp>=3.9.0,<4"]
-openai = ["clawops[agent]", "openai>=1.76.0"]
+openai = ["clawops[agent]", "openai>=2.0.0"]
 anthropic-llm = ["clawops[agent]", "anthropic>=0.40.0"]
 gemini-llm = ["clawops[agent]", "google-genai>=1.60.0"]
 ollama = ["clawops[agent]", "openai>=1.0.0"]

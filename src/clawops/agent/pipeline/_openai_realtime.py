@@ -170,20 +170,27 @@ class OpenAIRealtime:
 
         await self._connection.session.update(
             session={
-                "modalities": ["text", "audio"],
-                "voice": self._config.voice,
+                "type": "realtime",
+                "output_modalities": ["audio"],
                 "instructions": self._config.system_prompt,
-                "input_audio_format": "g711_ulaw",
-                "output_audio_format": "g711_ulaw",
-                "input_audio_transcription": {
-                    "model": "gpt-4o-mini-transcribe",
-                    "language": self._config.language,
-                },
-                "input_audio_noise_reduction": {"type": "far_field"},
-                "turn_detection": {
-                    "type": "semantic_vad",
-                    "interrupt_response": True,
-                    "eagerness": self._config.eagerness,
+                "audio": {
+                    "input": {
+                        "format": {"type": "audio/pcmu"},
+                        "noise_reduction": {"type": "far_field"},
+                        "transcription": {
+                            "model": "gpt-4o-mini-transcribe",
+                            "language": self._config.language,
+                        },
+                        "turn_detection": {
+                            "type": "semantic_vad",
+                            "interrupt_response": True,
+                            "eagerness": self._config.eagerness,
+                        },
+                    },
+                    "output": {
+                        "format": {"type": "audio/pcmu"},
+                        "voice": self._config.voice,
+                    },
                 },
                 "tools": tool_schemas,
             }
@@ -229,7 +236,7 @@ class OpenAIRealtime:
             return
         event_type = event.type
 
-        if event_type == "response.audio.delta":
+        if event_type == "response.output_audio.delta":
             if self._response_start_ts is None:
                 self._response_start_ts = self._latest_media_ts
                 self._sent_audio_chunks = 0
@@ -261,7 +268,7 @@ class OpenAIRealtime:
                 self._sent_audio_chunks += 1
             self._audio_remainder = ulaw[full_end:]
 
-        elif event_type == "response.audio.done":
+        elif event_type == "response.output_audio.done":
             if self._audio_remainder:
                 padded = self._audio_remainder + b"\xff" * (160 - len(self._audio_remainder))
                 await self._call.send_audio(padded)
@@ -279,7 +286,7 @@ class OpenAIRealtime:
         elif event_type == "conversation.item.input_audio_transcription.completed":
             await self._call._emit("transcript", "user", event.transcript or "")
 
-        elif event_type == "response.audio_transcript.done":
+        elif event_type == "response.output_audio_transcript.done":
             await self._call._emit("transcript", "assistant", event.transcript or "")
 
         elif event_type == "error":
@@ -384,6 +391,7 @@ class OpenAIRealtime:
         # 1) 연결 닫기 → receive loop의 async for가 자연 종료
         if self._connection:
             await self._connection.close()
+            self._connection = None
         # 2) 남은 태스크 정리
         for task in self._tasks:
             if not task.done():

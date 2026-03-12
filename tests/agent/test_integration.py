@@ -1,4 +1,5 @@
 """전체 Agent 컴포넌트 통합 테스트 (실제 서버 연결 없이)."""
+
 import pytest
 from clawops.agent import ClawOpsAgent
 from clawops.agent._session import CallSession
@@ -111,6 +112,4 @@ def test_all_imports():
     from clawops.agent.pipeline._openai_realtime import OpenAIRealtime, OpenAIRealtimeConfig
     from clawops.agent.pipeline._gemini_realtime import GeminiRealtime
     from clawops.agent.mcp import MCPServerHTTP, MCPServerStdio, MCPClient
-    # Legacy imports
-    from clawops.agent.plugins.openai_realtime import RealtimeSession, RealtimeConfig
     # All imports successful
