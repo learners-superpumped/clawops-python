@@ -25,6 +25,10 @@ class Session(Protocol):
         """인바운드 오디오(G.711 ulaw) 전달."""
         ...
 
+    async def feed_dtmf(self, digits: str) -> None:
+        """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
+        ...
+
     async def stop(self) -> None:
         """세션 종료 및 리소스 정리."""
         ...

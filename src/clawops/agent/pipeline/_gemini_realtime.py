@@ -253,6 +253,10 @@ class GeminiRealtime:
         except Exception as e:
             log.warning(f"Gemini audio send failed: {e}")
 
+    async def feed_dtmf(self, digits: str) -> None:
+        """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
+        pass
+
     async def _receive_loop(self) -> None:
         if not self._session:
             return

@@ -33,3 +33,9 @@ def test_pipeline_session_is_session():
 
     session = PipelineSession(stt=FakeSTT(), llm=FakeLLM(), tts=FakeTTS())
     assert isinstance(session, Session)
+
+
+def test_session_protocol_has_feed_dtmf():
+    """Session 프로토콜에 feed_dtmf 메서드가 정의되어 있는지 확인."""
+    from clawops.agent.pipeline._base import Session
+    assert hasattr(Session, "feed_dtmf")

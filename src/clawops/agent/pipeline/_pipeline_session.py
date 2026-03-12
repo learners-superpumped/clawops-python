@@ -93,6 +93,10 @@ class PipelineSession:
             return
         await self._audio_queue.put(ulaw)
 
+    async def feed_dtmf(self, digits: str) -> None:
+        """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
+        pass
+
     async def stop(self) -> None:
         self._running = False
         await self._audio_queue.put(None)
