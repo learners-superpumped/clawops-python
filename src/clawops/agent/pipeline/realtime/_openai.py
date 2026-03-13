@@ -301,6 +301,19 @@ class OpenAIRealtime:
             if not self._connection:
                 return
 
+            # Unknown tool 처리 — 모델이 복구할 수 있도록 에러 결과를 반환
+            if func_name not in self._tools:
+                log.error(f"Unknown tool: {func_name}")
+                await self._connection.conversation.item.create(
+                    item={
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps({"error": f"Unknown tool: {func_name}"}),
+                    }
+                )
+                await self._connection.response.create()
+                return
+
             # Custom / MCP tool 처리
             source = "mcp" if func_name in self._tools._mcp_tools else "local"
 
