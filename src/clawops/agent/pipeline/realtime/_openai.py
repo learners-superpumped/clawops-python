@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from openai import AsyncOpenAI
+from openai.types.realtime.realtime_audio_input_turn_detection_param import (
+    RealtimeAudioInputTurnDetectionParam,
+)
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
 
 from ..._audio import ulaw_to_pcm16
@@ -37,7 +40,7 @@ class OpenAIRealtimeConfig:
     voice: str = "marin"
     model: str = "gpt-realtime-1.5"
     language: str = "ko"
-    eagerness: str = "high"
+    turn_detection: RealtimeAudioInputTurnDetectionParam | None = None
     greeting: bool = True
 
 
@@ -56,20 +59,26 @@ class OpenAIRealtime:
         model: str = "gpt-realtime-1.5",
         voice: str = "marin",
         language: str = "ko",
-        eagerness: str = "high",
+        turn_detection: RealtimeAudioInputTurnDetectionParam | None = None,
         greeting: bool = True,
         tool_registry: ToolRegistry | None = None,
         recorder: AudioRecorder | None = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY", "")
+        if turn_detection is None:
+            turn_detection = {
+                "type": "semantic_vad",
+                "eagerness": "medium",
+                "interrupt_response": True,
+            }
         self._config = OpenAIRealtimeConfig(
             system_prompt=system_prompt,
             openai_api_key=api_key,
             voice=voice,
             model=model,
             language=language,
-            eagerness=eagerness,
+            turn_detection=turn_detection,
             greeting=greeting,
         )
         self._tools = tool_registry or ToolRegistry()
@@ -127,11 +136,7 @@ class OpenAIRealtime:
                             "model": "whisper-1",
                             "language": self._config.language,
                         },
-                        "turn_detection": {
-                            "type": "semantic_vad",
-                            "interrupt_response": True,
-                            "eagerness": self._config.eagerness,
-                        },
+                        "turn_detection": self._config.turn_detection,
                     },
                     "output": {
                         "format": {"type": "audio/pcmu"},

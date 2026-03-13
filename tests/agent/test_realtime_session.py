@@ -10,7 +10,7 @@ def test_openai_realtime_config_defaults():
     assert config.voice == "marin"
     assert config.model == "gpt-realtime-1.5"
     assert config.language == "ko"
-    assert config.eagerness == "high"
+    assert config.turn_detection is None
     assert config.greeting is True
 
 
@@ -21,12 +21,22 @@ def test_openai_realtime_config_custom():
         voice="nova",
         model="gpt-4o-mini-realtime",
         language="en",
-        eagerness="low",
+        turn_detection={"type": "server_vad", "threshold": 0.5, "silence_duration_ms": 300},
         greeting=False,
     )
     assert config.voice == "nova"
     assert config.language == "en"
+    assert config.turn_detection == {"type": "server_vad", "threshold": 0.5, "silence_duration_ms": 300}
     assert config.greeting is False
+
+
+def test_openai_realtime_config_custom_semantic_vad():
+    config = OpenAIRealtimeConfig(
+        system_prompt="custom",
+        openai_api_key="sk-test",
+        turn_detection={"type": "semantic_vad", "eagerness": "low"},
+    )
+    assert config.turn_detection == {"type": "semantic_vad", "eagerness": "low"}
 
 
 def test_openai_realtime_init():
@@ -47,6 +57,19 @@ def test_openai_realtime_defaults():
     assert session._config.voice == "marin"
     assert session._config.language == "ko"
     assert session._config.greeting is True
+    assert session._config.turn_detection == {
+        "type": "semantic_vad",
+        "eagerness": "medium",
+        "interrupt_response": True,
+    }
+
+
+def test_openai_realtime_custom_turn_detection():
+    session = OpenAIRealtime(
+        api_key="sk-test",
+        turn_detection={"type": "server_vad", "threshold": 0.3},
+    )
+    assert session._config.turn_detection == {"type": "server_vad", "threshold": 0.3}
 
 
 def test_openai_realtime_init_creates_client():

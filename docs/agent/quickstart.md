@@ -69,7 +69,7 @@ agent = ClawOpsAgent(
         voice="marin",                    # marin, ash, ballad, coral, sage, verse
         model="gpt-realtime-1.5",
         language="ko",
-        eagerness="high",                 # low, medium, high, auto
+        turn_detection={"type": "semantic_vad", "eagerness": "medium"},
         greeting=True,
     ),
 
