@@ -92,6 +92,7 @@ class OpenAIRealtime:
         self._sent_audio_chunks: int = 0
         self._recorder = recorder
         self._tasks: list[asyncio.Task[Any]] = []
+        self._pending_tool_tasks: set[asyncio.Task[Any]] = set()
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
         self._audio_remainder: bytes = b""  # 160B 미만 잔여 오디오 버퍼
@@ -233,7 +234,9 @@ class OpenAIRealtime:
         elif event_type == "response.output_item.done":
             item = event.item
             if item and item.type == "function_call":
-                await self._handle_tool_call(item)
+                task = asyncio.create_task(self._handle_tool_call(item))
+                self._pending_tool_tasks.add(task)
+                task.add_done_callback(self._pending_tool_tasks.discard)
             # 응답이 자연스럽게 끝난 경우 truncation 상태 초기화
             # — 이후 speech_started에서 이미 완료된 item을 truncate하지 않도록 방지
             if item and item.id == self._last_assistant_item:
@@ -261,48 +264,62 @@ class OpenAIRealtime:
         args = json.loads(item.arguments or "{}")
         log.info(f"Tool call: {func_name}({args})")
 
-        # Builtin tool 처리
-        if func_name in BUILTIN_TOOL_NAMES and self._call:
-            result = await execute_builtin_tool(func_name, args, self._call)
-            if result == "":  # hang_up
+        try:
+            # Builtin tool 처리
+            if func_name in BUILTIN_TOOL_NAMES and self._call:
+                result = await execute_builtin_tool(func_name, args, self._call)
+                if result == "":  # hang_up
+                    return
+                if result is not None and self._connection:
+                    await self._connection.conversation.item.create(
+                        item={
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": result,
+                        }
+                    )
+                    await self._connection.response.create()
                 return
-            if result is not None and self._connection:
-                await self._connection.conversation.item.create(
-                    item={
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": result,
-                    }
-                )
-                await self._connection.response.create()
+
+            if not self._connection:
+                return
+
+            # Custom / MCP tool 처리
+            source = "mcp" if func_name in self._tools._mcp_tools else "local"
+
+            with tool_call_span(func_name, source):
+                try:
+                    result = await self._tools.call(func_name, args)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    log.error(f"Tool call failed: {func_name}: {e}")
+                    result = f"Error: {e}"
+
+            log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
+
+            await self._connection.conversation.item.create(
+                item={
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": str(result),
+                }
+            )
+            log.debug(f"Sent function_call_output for {func_name}, requesting response")
+            await self._connection.response.create()
+
+        except asyncio.CancelledError:
+            log.info(f"Tool call cancelled (user interrupted): {func_name}")
             return
-
-        if not self._connection:
-            return
-
-        # Custom / MCP tool 처리
-        source = "mcp" if func_name in self._tools._mcp_tools else "local"
-
-        with tool_call_span(func_name, source):
-            try:
-                result = await self._tools.call(func_name, args)
-            except Exception as e:
-                log.error(f"Tool call failed: {func_name}: {e}")
-                result = f"Error: {e}"
-
-        log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
-
-        await self._connection.conversation.item.create(
-            item={
-                "type": "function_call_output",
-                "call_id": call_id,
-                "output": str(result),
-            }
-        )
-        log.debug(f"Sent function_call_output for {func_name}, requesting response")
-        await self._connection.response.create()
 
     async def _handle_truncation(self) -> None:
+        # 진행 중인 tool call을 모두 취소 — 사용자가 인터럽트했으므로
+        # 완료되지 않은 tool 결과를 서버에 보내면 컨텍스트가 꼬인다.
+        for task in list(self._pending_tool_tasks):
+            if not task.done():
+                task.cancel()
+        self._pending_tool_tasks.clear()
+
         if not self._last_assistant_item or self._response_start_ts is None:
             return
 
@@ -333,6 +350,10 @@ class OpenAIRealtime:
             if not task.done():
                 task.cancel()
         self._tasks.clear()
+        for task in self._pending_tool_tasks:
+            if not task.done():
+                task.cancel()
+        self._pending_tool_tasks.clear()
         # 3) LLM span 종료
         self._close_llm_span()
 
