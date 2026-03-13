@@ -32,6 +32,25 @@ log = logging.getLogger("clawops.agent")
 
 
 @dataclass
+class _PlaybackState:
+    """현재 재생 중인 응답의 상태. 하나의 assistant 응답에 대한 모든 정보를 담는다."""
+
+    item_id: str  # OpenAI conversation item ID
+    start_ts: int  # 첫 delta 수신 시점의 media timestamp
+    sent_chunks: int = 0  # 플랫폼으로 전송된 오디오 청크 수 (각 20ms)
+    generating: bool = True  # OpenAI가 아직 오디오를 생성 중인지
+    audio_remainder: bytes = b""  # 160B 미만 잔여 오디오 버퍼
+
+    @property
+    def total_audio_ms(self) -> int:
+        return self.sent_chunks * 20
+
+    def elapsed_ms(self, current_ts: int) -> int:
+        """사용자가 실제 들은 오디오 길이를 추정한다."""
+        return max(0, current_ts - self.start_ts)
+
+
+@dataclass
 class OpenAIRealtimeConfig:
     """OpenAIRealtime 내부 설정. 하위 호환용으로 유지."""
 
@@ -86,16 +105,13 @@ class OpenAIRealtime:
         self._client: AsyncOpenAI | None = None
         self._connection: AsyncRealtimeConnection | None = None
         self._call: CallSession | None = None
-        self._last_assistant_item: str | None = None
-        self._response_start_ts: int | None = None
+        self._playback: _PlaybackState | None = None  # 현재 재생 중인 응답 상태
         self._latest_media_ts: int = 0
-        self._sent_audio_chunks: int = 0
         self._recorder = recorder
         self._tasks: list[asyncio.Task[Any]] = []
         self._pending_tool_tasks: set[asyncio.Task[Any]] = set()
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
-        self._audio_remainder: bytes = b""  # 160B 미만 잔여 오디오 버퍼
 
     def set_tool_registry(self, registry: ToolRegistry) -> None:
         """콜별로 fork된 ToolRegistry를 주입한다."""
@@ -190,14 +206,17 @@ class OpenAIRealtime:
         event_type = event.type
 
         if event_type == "response.output_audio.delta":
-            if self._response_start_ts is None:
-                self._response_start_ts = self._latest_media_ts
-                self._sent_audio_chunks = 0
+            if self._playback is None:
+                self._playback = _PlaybackState(
+                    item_id=event.item_id or "",
+                    start_ts=self._latest_media_ts,
+                )
                 self._diag_delta_count = 0
                 self._diag_last_delta_time = asyncio.get_event_loop().time()
-            if event.item_id:
-                self._last_assistant_item = event.item_id
+            elif event.item_id:
+                self._playback.item_id = event.item_id
 
+            pb = self._playback
             ulaw = base64.b64decode(event.delta)
             self._diag_delta_count = getattr(self, "_diag_delta_count", 0) + 1
             now = asyncio.get_event_loop().time()
@@ -208,25 +227,27 @@ class OpenAIRealtime:
                     f"last50in={elapsed * 1000:.0f}ms "
                     f"avg={elapsed * 1000 / 50:.1f}ms/delta "
                     f"size={len(ulaw)}B "
-                    f"totalChunks={self._sent_audio_chunks}"
+                    f"totalChunks={pb.sent_chunks}"
                 )
                 self._diag_last_delta_time = now
             if self._recorder:
                 self._recorder.write_outbound(ulaw_to_pcm16(ulaw))
-            ulaw = self._audio_remainder + ulaw
+            ulaw = pb.audio_remainder + ulaw
             chunk_size = 160
             full_end = (len(ulaw) // chunk_size) * chunk_size
             for off in range(0, full_end, chunk_size):
                 await self._call.send_audio(ulaw[off : off + chunk_size])
-                self._sent_audio_chunks += 1
-            self._audio_remainder = ulaw[full_end:]
+                pb.sent_chunks += 1
+            pb.audio_remainder = ulaw[full_end:]
 
         elif event_type == "response.output_audio.done":
-            if self._audio_remainder:
-                padded = self._audio_remainder + b"\xff" * (160 - len(self._audio_remainder))
-                await self._call.send_audio(padded)
-                self._sent_audio_chunks += 1
-                self._audio_remainder = b""
+            if self._playback:
+                self._playback.generating = False
+                if self._playback.audio_remainder:
+                    padded = self._playback.audio_remainder + b"\xff" * (160 - len(self._playback.audio_remainder))
+                    await self._call.send_audio(padded)
+                    self._playback.sent_chunks += 1
+                    self._playback.audio_remainder = b""
 
         elif event_type == "input_audio_buffer.speech_started":
             await self._handle_truncation()
@@ -237,13 +258,9 @@ class OpenAIRealtime:
                 task = asyncio.create_task(self._handle_tool_call(item))
                 self._pending_tool_tasks.add(task)
                 task.add_done_callback(self._pending_tool_tasks.discard)
-            # 응답이 자연스럽게 끝난 경우 truncation 상태 초기화
-            # — 이후 speech_started에서 이미 완료된 item을 truncate하지 않도록 방지
-            if item and item.id == self._last_assistant_item:
-                self._last_assistant_item = None
-                self._response_start_ts = None
-                self._sent_audio_chunks = 0
-                self._audio_remainder = b""
+            # _playback은 여기서 리셋하지 않는다.
+            # 큐에 재생 대기 중인 오디오가 있을 수 있고,
+            # 인터럽트 시 truncate하려면 item_id가 필요하다.
 
         elif event_type == "conversation.item.input_audio_transcription.completed":
             transcript = event.transcript or ""
@@ -313,32 +330,36 @@ class OpenAIRealtime:
             return
 
     async def _handle_truncation(self) -> None:
-        # 진행 중인 tool call을 모두 취소 — 사용자가 인터럽트했으므로
-        # 완료되지 않은 tool 결과를 서버에 보내면 컨텍스트가 꼬인다.
+        # 진행 중인 tool call 취소
         for task in list(self._pending_tool_tasks):
             if not task.done():
                 task.cancel()
         self._pending_tool_tasks.clear()
 
-        if not self._last_assistant_item or self._response_start_ts is None:
+        # 큐에 남아있는 오디오를 항상 비운다
+        if self._call:
+            await self._call.clear_audio()
+
+        pb = self._playback
+        if pb is None:
             return
 
-        audio_end_ms = max(0, self._sent_audio_chunks * 20)
+        # 아직 응답 생성 중이면 취소
+        if pb.generating and self._connection:
+            await self._connection.response.cancel()
+
+        audio_end_ms = pb.elapsed_ms(self._latest_media_ts)
+
+        log.info(f"[Truncation] item={pb.item_id} audio_end_ms={audio_end_ms} total_audio_ms={pb.total_audio_ms}")
 
         if self._connection:
             await self._connection.conversation.item.truncate(
-                item_id=self._last_assistant_item,
+                item_id=pb.item_id,
                 content_index=0,
                 audio_end_ms=audio_end_ms,
             )
 
-        if self._call:
-            await self._call.clear_audio()
-
-        self._last_assistant_item = None
-        self._response_start_ts = None
-        self._sent_audio_chunks = 0
-        self._audio_remainder = b""
+        self._playback = None
 
     async def stop(self) -> None:
         # 1) 연결 닫기 → receive loop의 async for가 자연 종료
