@@ -315,14 +315,15 @@ class OpenAIRealtime:
 
             log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
 
+            result_str = str(result)
             await self._connection.conversation.item.create(
                 item={
                     "type": "function_call_output",
                     "call_id": call_id,
-                    "output": str(result),
+                    "output": result_str,
                 }
             )
-            log.debug(f"Sent function_call_output for {func_name}, requesting response")
+            log.info(f"[ToolResult] {func_name} call_id={call_id} len={len(result_str)}")
             await self._connection.response.create()
 
         except asyncio.CancelledError:
@@ -344,20 +345,15 @@ class OpenAIRealtime:
         if pb is None:
             return
 
-        # 아직 응답 생성 중이면 취소
-        if pb.generating and self._connection:
-            await self._connection.response.cancel()
-
-        audio_end_ms = pb.elapsed_ms(self._latest_media_ts)
-
-        log.info(f"[Truncation] item={pb.item_id} audio_end_ms={audio_end_ms} total_audio_ms={pb.total_audio_ms}")
-
-        if self._connection:
-            await self._connection.conversation.item.truncate(
-                item_id=pb.item_id,
-                content_index=0,
-                audio_end_ms=audio_end_ms,
-            )
+        # interrupt_response=True이므로 서버가 자동으로 응답을 취소한다.
+        # response.cancel()을 중복 호출하면 서버 상태가 꼬일 수 있으므로 생략.
+        # conversation.item.truncate()는 오디오와 transcript를 모두 잘라내어
+        # 대화 맥락을 손실시키므로 호출하지 않는다.
+        log.info(
+            f"[Interrupt] item={pb.item_id} "
+            f"played={pb.elapsed_ms(self._latest_media_ts)}ms "
+            f"total={pb.total_audio_ms}ms"
+        )
 
         self._playback = None
 
