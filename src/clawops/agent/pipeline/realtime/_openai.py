@@ -234,6 +234,13 @@ class OpenAIRealtime:
             item = event.item
             if item and item.type == "function_call":
                 await self._handle_tool_call(item)
+            # 응답이 자연스럽게 끝난 경우 truncation 상태 초기화
+            # — 이후 speech_started에서 이미 완료된 item을 truncate하지 않도록 방지
+            if item and item.id == self._last_assistant_item:
+                self._last_assistant_item = None
+                self._response_start_ts = None
+                self._sent_audio_chunks = 0
+                self._audio_remainder = b""
 
         elif event_type == "conversation.item.input_audio_transcription.completed":
             transcript = event.transcript or ""
