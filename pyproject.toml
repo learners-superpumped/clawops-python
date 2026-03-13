@@ -48,6 +48,7 @@ dev = [
     "ruff>=0.1",
     "aiohttp>=3.9.0,<4",
     "google-genai>=1.60.0",
+    "openai>=2.0.0",
 ]
 
 # Agent
