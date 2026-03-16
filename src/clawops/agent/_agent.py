@@ -300,7 +300,7 @@ class ClawOpsAgent:
 
             # Send call telemetry (best-effort)
             telemetry = session.get_telemetry() if hasattr(session, "get_telemetry") else None
-            if telemetry:
+            if isinstance(telemetry, dict):
                 session_tools = call_tools.to_openai_tools() if call_tools else []
                 telemetry["toolCount"] = len(session_tools) if session_tools else 0
                 telemetry["mcpServerCount"] = len(self._mcp_servers) if self._mcp_servers else 0
