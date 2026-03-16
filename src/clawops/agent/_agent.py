@@ -313,12 +313,15 @@ class ClawOpsAgent:
 
             try:
                 await media_ws.connect()
+            except Exception:
+                call.metrics.record_end_reason("error")
             finally:
                 # Determine end reason
-                if call.status == "completed":
-                    call.metrics.record_end_reason("completed")
-                else:
-                    call.metrics.record_end_reason(call.status or "unknown")
+                if not call.metrics.end_reason:
+                    if call.status == "ended":
+                        call.metrics.record_end_reason("user_hangup")
+                    else:
+                        call.metrics.record_end_reason("agent_hangup")
 
                 # Send call metrics (best-effort)
                 try:
