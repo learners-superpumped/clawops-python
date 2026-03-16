@@ -254,11 +254,9 @@ class GeminiRealtime:
             return
 
         # G.711 ulaw 8kHz → PCM16 8kHz → PCM16 16kHz
+        # inbound 녹음은 _agent.py on_audio 콜백에서 공통 처리한다.
         pcm8k = ulaw_to_pcm16(audio)
         pcm16k = resample_pcm16(pcm8k, from_rate=8000, to_rate=16000)
-
-        if self._recorder:
-            self._recorder.write_inbound(pcm8k)
 
         self._sent_audio_chunks += 1
 

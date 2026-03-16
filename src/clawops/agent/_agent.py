@@ -263,7 +263,7 @@ class ClawOpsAgent:
                 if recorder:
                     from ._audio import ulaw_to_pcm16
 
-                    recorder.write_inbound(ulaw_to_pcm16(ulaw))
+                    recorder.write_inbound(ulaw_to_pcm16(ulaw), media_ts_ms=ts)
 
             async def on_dtmf(digit: str) -> None:
                 self._on_dtmf_event(call, digit)

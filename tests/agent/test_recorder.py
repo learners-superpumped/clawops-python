@@ -6,8 +6,6 @@ import wave
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from clawops.agent._recorder import AudioRecorder, _mix_samples, _wav_header
 
 
@@ -45,7 +43,7 @@ def test_write_inbound_only(tmp_path: Path):
     rec = AudioRecorder(str(tmp_path), "call-in")
     rec.start()
     pcm = b"\x01\x00" * 80
-    rec.write_inbound(pcm)
+    rec.write_inbound(pcm, media_ts_ms=0)
     rec.stop()
     call_dir = tmp_path / "call-in"
     with wave.open(str(call_dir / "in.wav"), "rb") as wf:
@@ -63,10 +61,12 @@ def test_write_outbound_only(tmp_path: Path):
         assert wf.getnframes() >= 80
 
 
-def test_stop_equalizes_track_lengths(tmp_path: Path):
+@patch("time.monotonic")
+def test_stop_equalizes_track_lengths(mock_mono, tmp_path: Path):
+    mock_mono.return_value = 0.0
     rec = AudioRecorder(str(tmp_path), "call-eq")
     rec.start()
-    rec.write_inbound(b"\x01\x00" * 160)
+    rec.write_inbound(b"\x01\x00" * 160, media_ts_ms=0)
     rec.write_outbound(b"\x02\x00" * 80)
     rec.stop()
     call_dir = tmp_path / "call-eq"
@@ -78,7 +78,7 @@ def test_stop_equalizes_track_lengths(tmp_path: Path):
 
 def test_write_before_start_is_noop(tmp_path: Path):
     rec = AudioRecorder(str(tmp_path), "call-noop")
-    rec.write_inbound(b"\x01\x00" * 80)
+    rec.write_inbound(b"\x01\x00" * 80, media_ts_ms=0)
     rec.write_outbound(b"\x02\x00" * 80)
     assert not (tmp_path / "call-noop").exists()
 
@@ -99,12 +99,14 @@ def test_mix_samples_clipping():
     assert val == 32767
 
 
-def test_mix_file_contains_both_tracks(tmp_path: Path):
+@patch("time.monotonic")
+def test_mix_file_contains_both_tracks(mock_mono, tmp_path: Path):
+    mock_mono.return_value = 0.0
     rec = AudioRecorder(str(tmp_path), "call-mix")
     rec.start()
     in_pcm = struct.pack("<4h", 100, 200, 300, 400)
     out_pcm = struct.pack("<4h", 10, 20, 30, 40)
-    rec.write_inbound(in_pcm)
+    rec.write_inbound(in_pcm, media_ts_ms=0)
     rec.write_outbound(out_pcm)
     rec.stop()
     call_dir = tmp_path / "call-mix"
@@ -128,16 +130,55 @@ def test_zero_length_call(tmp_path: Path):
 
 
 @patch("time.monotonic")
-def test_wall_clock_gap_inserts_silence(mock_mono, tmp_path: Path):
-    times = iter([0.0, 0.0, 1.0])
+def test_inbound_media_ts_no_jitter_stretch(mock_mono, tmp_path: Path):
+    """media timestamp 사용 시 wall-clock jitter로 silence가 끼지 않는다."""
+    # wall-clock은 매번 5ms씩 늦게 도착하는 상황 시뮬레이션
+    times = iter([0.0, 0.025, 0.050, 0.075, 0.080])
     mock_mono.side_effect = lambda: next(times)
 
-    rec = AudioRecorder(str(tmp_path), "call-gap")
+    rec = AudioRecorder(str(tmp_path), "call-ts")
     rec.start()
-    rec.write_inbound(b"\x01\x00" * 80)
-    rec.write_inbound(b"\x02\x00" * 80)
+    chunk = b"\x01\x00" * 160  # 20ms = 320 bytes
+
+    # media_ts: 0, 20, 40 (정확한 20ms 간격)
+    rec.write_inbound(chunk, media_ts_ms=0)
+    rec.write_inbound(chunk, media_ts_ms=20)
+    rec.write_inbound(chunk, media_ts_ms=40)
     rec.stop()
 
-    call_dir = tmp_path / "call-gap"
-    in_size = (call_dir / "in.wav").stat().st_size - 44
-    assert in_size >= 16000
+    call_dir = tmp_path / "call-ts"
+    with open(str(call_dir / "in.wav"), "rb") as f:
+        f.seek(44)
+        data = f.read()
+
+    # media_ts 기반이므로 position 0부터 3 chunks 연속 기록 (960 bytes)
+    # wall-clock jitter와 무관하게 silence가 끼지 않아야 한다
+    audio_bytes = data[:960]
+    expected = chunk * 3
+    assert audio_bytes == expected
+
+
+@patch("time.monotonic")
+def test_inbound_media_ts_real_gap_preserved(mock_mono, tmp_path: Path):
+    """media timestamp에 실제 gap이 있으면 silence가 삽입된다."""
+    # start=0.0, 1st=0.020, 2nd=0.540, stop=0.560
+    times = iter([0.0, 0.020, 0.540, 0.560])
+    mock_mono.side_effect = lambda: next(times)
+
+    rec = AudioRecorder(str(tmp_path), "call-ts-gap")
+    rec.start()
+    chunk = b"\x01\x00" * 160  # 20ms
+
+    # 첫 청크: ts=0, 두번째: ts=500 (480ms gap)
+    rec.write_inbound(chunk, media_ts_ms=0)
+    rec.write_inbound(chunk, media_ts_ms=500)
+    rec.stop()
+
+    call_dir = tmp_path / "call-ts-gap"
+    with open(str(call_dir / "in.wav"), "rb") as f:
+        f.seek(44)
+        data = f.read()
+
+    # position 0에서 chunk(320) + gap(480ms=7680) + chunk(320)
+    expected_second_pos = 500 * 16  # 500ms * 16 bytes/ms = 8000
+    assert len(data) >= expected_second_pos + 320

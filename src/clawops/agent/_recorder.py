@@ -1,6 +1,7 @@
 """3-file call recording: in.wav, out.wav, mix.wav.
 
-Wall-clock 동기화로 실시간 녹음. 세 파일 모두 동일한 길이로 유지된다.
+Inbound는 media timestamp 기반, outbound는 wall-clock 기반으로 녹음한다.
+세 파일 모두 동일한 길이로 유지된다.
 recordings/{call_id}/in.wav   — 상대방 음성 (PCM16 8kHz mono)
 recordings/{call_id}/out.wav  — AI 음성 (PCM16 8kHz mono)
 recordings/{call_id}/mix.wav  — 양쪽 믹싱 (PCM16 8kHz mono)
@@ -55,7 +56,11 @@ def _mix_samples(a: bytes, b: bytes) -> bytes:
 
 
 class AudioRecorder:
-    """Wall-clock 동기화 3-file WAV recorder."""
+    """3-file WAV recorder.
+
+    Inbound: media timestamp 기반 위치 계산 (정확한 녹음).
+    Outbound: wall-clock 기반 위치 계산.
+    """
 
     def __init__(self, path: str, call_id: str) -> None:
         self._dir = os.path.join(path, call_id)
@@ -67,6 +72,7 @@ class AudioRecorder:
         self._mix_written = 0
         self._start_time: float = 0.0
         self._started = False
+        self._in_base_ts: int | None = None
 
     def start(self) -> None:
         os.makedirs(self._dir, exist_ok=True)
@@ -88,9 +94,9 @@ class AudioRecorder:
         elapsed = time.monotonic() - self._start_time
         return int(elapsed * BYTES_PER_SECOND)
 
-    def _pad_silence(self, f, written: int) -> int:
-        expected = self._expected_bytes()
-        gap = expected - written
+    def _pad_silence(self, f, written: int, target: int) -> int:
+        """written 위치부터 target 위치까지 silence로 채운다."""
+        gap = target - written
         if gap <= 0:
             return 0
         gap = gap - (gap % 2)  # 2-byte align
@@ -101,23 +107,20 @@ class AudioRecorder:
     def _write_to_mix(self, data: bytes, track_pos: int) -> None:
         if not self._f_mix:
             return
-        mix_data_pos = track_pos
-        file_pos = 44 + mix_data_pos
 
-        if mix_data_pos < self._mix_written:
-            # Overlap: read existing, mix, write back
-            overlap = min(len(data), self._mix_written - mix_data_pos)
-            self._f_mix.seek(file_pos)
+        if track_pos < self._mix_written:
+            overlap = min(len(data), self._mix_written - track_pos)
+            self._f_mix.seek(44 + track_pos)
             existing = self._f_mix.read(overlap)
             mixed = _mix_samples(existing, data[:overlap])
-            self._f_mix.seek(file_pos)
+            self._f_mix.seek(44 + track_pos)
             self._f_mix.write(mixed)
             if len(data) > overlap:
                 self._f_mix.write(data[overlap:])
-                self._mix_written = mix_data_pos + len(data)
+                self._mix_written = track_pos + len(data)
         else:
-            if mix_data_pos > self._mix_written:
-                gap = mix_data_pos - self._mix_written
+            if track_pos > self._mix_written:
+                gap = track_pos - self._mix_written
                 gap = gap - (gap % 2)  # 2-byte align
                 if gap > 0:
                     self._f_mix.seek(44 + self._mix_written)
@@ -127,11 +130,17 @@ class AudioRecorder:
             self._f_mix.write(data)
             self._mix_written += len(data)
 
-    def write_inbound(self, pcm16_8k: bytes) -> None:
+    def write_inbound(self, pcm16_8k: bytes, media_ts_ms: int) -> None:
+        """Media timestamp 기반으로 정확한 위치에 inbound 오디오를 기록한다."""
         if not self._started or not self._f_in:
             return
         try:
-            gap = self._pad_silence(self._f_in, self._in_written)
+            if self._in_base_ts is None:
+                self._in_base_ts = media_ts_ms
+            target = (media_ts_ms - self._in_base_ts) * BYTES_PER_SECOND // 1000
+            target = target - (target % 2)  # 2-byte align
+
+            gap = self._pad_silence(self._f_in, self._in_written, target)
             self._in_written += gap
             pos_before = self._in_written
             self._f_in.write(pcm16_8k)
@@ -144,7 +153,8 @@ class AudioRecorder:
         if not self._started or not self._f_out:
             return
         try:
-            gap = self._pad_silence(self._f_out, self._out_written)
+            target = self._expected_bytes()
+            gap = self._pad_silence(self._f_out, self._out_written, target)
             self._out_written += gap
             pos_before = self._out_written
             self._f_out.write(pcm16_8k)
