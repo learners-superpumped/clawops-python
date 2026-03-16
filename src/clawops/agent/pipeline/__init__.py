@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import importlib
+from typing import TYPE_CHECKING
+
 from ._base import Session, STT, LLM, TTS, SpeechEvent
 from .stt import DeepgramSTT
 from .llm import (
@@ -16,7 +21,9 @@ from .llm import (
 )
 from .tts import ElevenLabsTTS
 from ._pipeline_session import PipelineSession
-from .realtime import OpenAIRealtime, GeminiRealtime
+
+if TYPE_CHECKING:
+    from .realtime import OpenAIRealtime, GeminiRealtime
 
 __all__ = [
     "Session",
@@ -31,3 +38,15 @@ __all__ = [
     "OpenAIRealtime",
     "GeminiRealtime",
 ]
+
+_LAZY = {
+    "OpenAIRealtime": ".realtime",
+    "GeminiRealtime": ".realtime",
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY:
+        mod = importlib.import_module(_LAZY[name], __name__)
+        return getattr(mod, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
