@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class MistralLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "mistral"
+
     def __init__(
         self,
         *,

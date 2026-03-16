@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any, Callable, Awaitable
+
+from clawops.agent._telemetry import CallMetrics
 
 log = logging.getLogger("clawops.agent")
 
@@ -29,6 +32,8 @@ class CallSession:
         self.start_time = datetime.now()
         self.metadata: dict[str, Any] = {}
 
+        self._metrics = CallMetrics(_start_time_ms=time.time() * 1000)
+
         self._send_audio_fn: Callable[[bytes], Awaitable[None]] | None = None
         self._send_clear_fn: Callable[[], Awaitable[None]] | None = None
         self._hangup_fn: Callable[[], Awaitable[None]] | None = None
@@ -43,16 +48,22 @@ class CallSession:
         self._dtmf_queue: asyncio.Queue[str] = asyncio.Queue()
 
     @property
+    def metrics(self) -> CallMetrics:
+        return self._metrics
+
+    @property
     def duration(self) -> float:
         return (datetime.now() - self.start_time).total_seconds()
 
     async def send_audio(self, audio: bytes) -> None:
         if self._send_audio_fn:
             await self._send_audio_fn(audio)
+            self._metrics.record_first_response()
 
     async def clear_audio(self) -> None:
         if self._send_clear_fn:
             await self._send_clear_fn()
+            self._metrics.record_barge_in()
 
     async def hangup(self) -> None:
         if self._hangup_fn:

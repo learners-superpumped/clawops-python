@@ -125,6 +125,21 @@ class OpenAIRealtime:
         """콜별로 생성된 AudioRecorder를 주입한다."""
         self._recorder = recorder
 
+    def get_telemetry(self) -> dict[str, Any]:
+        return {
+            "sessionType": "openai_realtime",
+            "llm": {"provider": "openai", "model": self._config.model},
+            "stt": None,
+            "tts": None,
+            "voice": self._config.voice,
+            "language": self._config.language,
+            "greetingEnabled": self._config.greeting,
+            "recordingEnabled": self._recorder is not None,
+            "toolCount": 0,
+            "mcpServerCount": 0,
+            "builtinTools": [],
+        }
+
     async def start(self, call: CallSession) -> None:
         self._call = call
 
@@ -284,6 +299,8 @@ class OpenAIRealtime:
         try:
             # Builtin tool 처리
             if func_name in BUILTIN_TOOL_NAMES and self._call:
+                if self._call:
+                    self._call.metrics.record_tool_call()
                 result = await execute_builtin_tool(func_name, args, self._call)
                 if result == "":  # hang_up
                     return
@@ -315,6 +332,8 @@ class OpenAIRealtime:
                 return
 
             # Custom / MCP tool 처리
+            if self._call:
+                self._call.metrics.record_tool_call()
             source = "mcp" if func_name in self._tools._mcp_tools else "local"
 
             with tool_call_span(func_name, source):
@@ -324,6 +343,8 @@ class OpenAIRealtime:
                     raise
                 except Exception as e:
                     log.error(f"Tool call failed: {func_name}: {e}")
+                    if self._call:
+                        self._call.metrics.record_tool_error(e)
                     result = f"Error: {e}"
 
             log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")

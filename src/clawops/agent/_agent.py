@@ -18,6 +18,7 @@ from .mcp._client import MCPClient
 from ._media_ws import MediaWebSocket
 from ._session import CallSession
 from ._recorder import AudioRecorder
+from ._telemetry import get_sdk_info
 from ._tool import ToolRegistry
 from .pipeline import Session
 from .tracing import TracingConfig
@@ -145,6 +146,10 @@ class ClawOpsAgent:
         )
         self._control_ws_task = asyncio.create_task(self._control_ws.connect())
         await self._control_ws.wait_connected()
+        try:
+            await self._control_ws.send({"event": "agent.hello", "sdk": get_sdk_info()})
+        except Exception:
+            pass
 
     async def call(self, to: str, *, timeout: int = 60) -> CallSession:
         """발신 전화를 건다. CallSession을 즉시 리턴 (queued 상태).
@@ -293,9 +298,34 @@ class ClawOpsAgent:
             await call._emit("call_start")
             await session.start(call)
 
+            # Send call telemetry (best-effort)
+            telemetry = session.get_telemetry() if hasattr(session, "get_telemetry") else None
+            if telemetry:
+                session_tools = call_tools.to_openai_tools() if call_tools else []
+                telemetry["toolCount"] = len(session_tools) if session_tools else 0
+                telemetry["mcpServerCount"] = len(self._mcp_servers) if self._mcp_servers else 0
+                telemetry["builtinTools"] = [t.value for t in self._builtin_tools] if self._builtin_tools else []
+                telemetry["recordingEnabled"] = self._recording
+                try:
+                    await self._control_ws.send({"event": "call.telemetry", "callId": call.call_id, "telemetry": telemetry})
+                except Exception:
+                    pass
+
             try:
                 await media_ws.connect()
             finally:
+                # Determine end reason
+                if call.status == "completed":
+                    call.metrics.record_end_reason("completed")
+                else:
+                    call.metrics.record_end_reason(call.status or "unknown")
+
+                # Send call metrics (best-effort)
+                try:
+                    await self._control_ws.send({"event": "call.metrics", "callId": call.call_id, "metrics": call.metrics.to_dict()})
+                except Exception:
+                    pass
+
                 await session.stop()
                 if mcp_clients:
                     call_tools.clear_mcp_tools()

@@ -89,6 +89,27 @@ class PipelineSession:
         """콜별로 생성된 AudioRecorder를 주입한다."""
         self._recorder = recorder
 
+    def get_telemetry(self) -> dict[str, Any]:
+        llm = self._llm
+        stt = self._stt
+        tts = self._tts
+        return {
+            "sessionType": "pipeline",
+            "llm": {"provider": getattr(llm, "provider", None), "model": getattr(llm, "model", None)}
+                if hasattr(llm, "provider") else None,
+            "stt": {"provider": getattr(stt, "provider", None), "model": getattr(stt, "model", None)}
+                if hasattr(stt, "provider") else None,
+            "tts": {"provider": getattr(tts, "provider", None), "model": getattr(tts, "model", None)}
+                if hasattr(tts, "provider") else None,
+            "voice": getattr(tts, "voice_id", None),
+            "language": self._language,
+            "greetingEnabled": self._greeting,
+            "recordingEnabled": self._recorder is not None,
+            "toolCount": 0,
+            "mcpServerCount": 0,
+            "builtinTools": [],
+        }
+
     async def start(self, call: CallSession) -> None:
         self._call = call
         self._running = True
@@ -309,6 +330,8 @@ class PipelineSession:
 
             # Builtin tool 처리
             if func_name in BUILTIN_TOOL_NAMES and self._call:
+                if self._call:
+                    self._call.metrics.record_tool_call()
                 result = await execute_builtin_tool(func_name, args, self._call)
                 if result == "":  # hang_up
                     return
@@ -319,10 +342,14 @@ class PipelineSession:
                     continue
 
             # Custom / MCP tool 처리
+            if self._call:
+                self._call.metrics.record_tool_call()
             try:
                 result = await self._tools.call(func_name, args)
             except Exception as e:
                 log.error(f"Tool call failed: {func_name}: {e}")
+                if self._call:
+                    self._call.metrics.record_tool_error(e)
                 result = f"Error: {e}"
             self._messages.append(
                 {"role": "tool", "tool_call_id": call_id, "content": str(result)}

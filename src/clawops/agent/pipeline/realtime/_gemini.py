@@ -178,6 +178,21 @@ class GeminiRealtime:
         """콜별로 생성된 AudioRecorder를 주입한다."""
         self._recorder = recorder
 
+    def get_telemetry(self) -> dict[str, Any]:
+        return {
+            "sessionType": "gemini_realtime",
+            "llm": {"provider": "gemini", "model": self._model},
+            "stt": None,
+            "tts": None,
+            "voice": self._voice,
+            "language": self._language,
+            "greetingEnabled": self._greeting,
+            "recordingEnabled": self._recorder is not None,
+            "toolCount": 0,
+            "mcpServerCount": 0,
+            "builtinTools": [],
+        }
+
     async def start(self, call: CallSession) -> None:
         self._call = call
 
@@ -378,6 +393,8 @@ class GeminiRealtime:
 
             # Builtin tool 처리
             if func_name in BUILTIN_TOOL_NAMES and self._call:
+                if self._call:
+                    self._call.metrics.record_tool_call()
                 result = await execute_builtin_tool(func_name, args, self._call)
                 if result == "":  # hang_up
                     return
@@ -392,12 +409,16 @@ class GeminiRealtime:
                 continue
 
             # Custom / MCP tool 처리
+            if self._call:
+                self._call.metrics.record_tool_call()
             source = "mcp" if func_name in self._tools._mcp_tools else "local"
             with tool_call_span(func_name, source):
                 try:
                     result = await self._tools.call(func_name, args)
                 except Exception as e:
                     log.error(f"Tool call failed: {func_name}: {e}")
+                    if self._call:
+                        self._call.metrics.record_tool_error(e)
                     result = f"Error: {e}"
 
             responses.append(

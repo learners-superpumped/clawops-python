@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class FireworksLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "fireworks"
+
     def __init__(
         self,
         *,

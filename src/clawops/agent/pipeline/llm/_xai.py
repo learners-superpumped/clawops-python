@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class XaiLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "xai"
+
     def __init__(
         self,
         *,

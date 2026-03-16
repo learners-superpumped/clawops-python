@@ -33,6 +33,10 @@ class Session(Protocol):
         """세션 종료 및 리소스 정리."""
         ...
 
+    def get_telemetry(self) -> dict[str, Any] | None:
+        """Return session telemetry data."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class SpeechEvent:

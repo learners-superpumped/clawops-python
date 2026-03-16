@@ -38,6 +38,18 @@ class ElevenLabsTTS:
         self._language_code = language_code
 
     @property
+    def provider(self) -> str:
+        return "elevenlabs"
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def voice_id(self) -> str:
+        return self._voice_id
+
+    @property
     def sample_rate(self) -> int:
         """output_format에서 sample rate 추출."""
         parts = self._output_format.split("_")

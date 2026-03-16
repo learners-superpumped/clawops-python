@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class OllamaLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "ollama"
+
     def __init__(
         self,
         *,

@@ -25,6 +25,14 @@ class GeminiLLM:
         self._temperature = temperature
         self._max_tokens = max_tokens
 
+    @property
+    def provider(self) -> str:
+        return "gemini"
+
+    @property
+    def model(self) -> str:
+        return self._model
+
     async def generate(
         self,
         messages: list[dict[str, Any]],

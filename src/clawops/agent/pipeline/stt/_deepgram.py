@@ -42,6 +42,14 @@ class DeepgramSTT:
         self._endpointing = endpointing
         self._utterance_end_ms = utterance_end_ms
 
+    @property
+    def provider(self) -> str:
+        return "deepgram"
+
+    @property
+    def model(self) -> str:
+        return self._model
+
     async def transcribe(self, audio_stream: AsyncIterator[bytes]) -> AsyncIterator[SpeechEvent]:
         """오디오 스트림(PCM16) → SpeechEvent 스트림."""
         params = (

@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class DeepSeekLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "deepseek"
+
     def __init__(
         self,
         *,

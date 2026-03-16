@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class PerplexityLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "perplexity"
+
     def __init__(
         self,
         *,

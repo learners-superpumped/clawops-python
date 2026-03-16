@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class GroqLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "groq"
+
     def __init__(
         self,
         *,

@@ -7,6 +7,10 @@ from ._openai_compat import OpenAICompatibleLLM
 
 
 class TogetherLLM(OpenAICompatibleLLM):
+    @property
+    def provider(self) -> str:
+        return "together"
+
     def __init__(
         self,
         *,
