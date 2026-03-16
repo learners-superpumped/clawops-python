@@ -39,7 +39,12 @@ class AnthropicLLM:
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
         """messages → 텍스트 스트림. tool_call 시 JSON 마커 반환."""
-        import anthropic
+        try:
+            import anthropic
+        except ImportError:
+            raise ImportError(
+                "anthropic is required for AnthropicLLM. Install it with: pip install clawops[anthropic-llm]"
+            ) from None
 
         client = anthropic.AsyncAnthropic(api_key=self._api_key)
 

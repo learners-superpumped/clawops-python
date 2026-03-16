@@ -39,7 +39,12 @@ class OpenAILLM:
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
         """messages → 텍스트 스트림. tool_call 시 JSON 마커 반환."""
-        import openai
+        try:
+            import openai
+        except ImportError:
+            raise ImportError(
+                "openai is required for OpenAILLM. Install it with: pip install clawops[openai]"
+            ) from None
 
         client = openai.AsyncOpenAI(api_key=self._api_key)
 

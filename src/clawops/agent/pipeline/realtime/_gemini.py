@@ -141,7 +141,7 @@ class GeminiRealtime:
     ) -> None:
         if not _HAS_GENAI:
             raise ImportError(
-                "google-genai is required for GeminiRealtime. Install it with: pip install clawops[gemini-llm]"
+                "google-genai is required for GeminiRealtime. Install it with: pip install clawops[gemini]"
             )
         if api_key is None:
             api_key = os.environ.get("GOOGLE_API_KEY", "")

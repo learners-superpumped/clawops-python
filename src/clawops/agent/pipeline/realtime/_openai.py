@@ -14,11 +14,19 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-from openai import AsyncOpenAI
-from openai.types.realtime.realtime_audio_input_turn_detection_param import (
-    RealtimeAudioInputTurnDetectionParam,
-)
-from openai.resources.realtime.realtime import AsyncRealtimeConnection
+try:
+    from openai import AsyncOpenAI
+    from openai.types.realtime.realtime_audio_input_turn_detection_param import (
+        RealtimeAudioInputTurnDetectionParam,
+    )
+    from openai.resources.realtime.realtime import AsyncRealtimeConnection
+
+    _HAS_OPENAI = True
+except ImportError:
+    AsyncOpenAI = None  # type: ignore[assignment,misc]
+    RealtimeAudioInputTurnDetectionParam = None  # type: ignore[assignment,misc]
+    AsyncRealtimeConnection = None  # type: ignore[assignment,misc]
+    _HAS_OPENAI = False
 
 from ..._audio import ulaw_to_pcm16
 from ..._builtin_tools import BuiltinTool
@@ -83,6 +91,10 @@ class OpenAIRealtime:
         tool_registry: ToolRegistry | None = None,
         recorder: AudioRecorder | None = None,
     ) -> None:
+        if not _HAS_OPENAI:
+            raise ImportError(
+                "openai is required for OpenAIRealtime. Install it with: pip install clawops[openai]"
+            )
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY", "")
         if turn_detection is None:

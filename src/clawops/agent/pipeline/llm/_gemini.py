@@ -39,8 +39,13 @@ class GeminiLLM:
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[str]:
         """messages → 텍스트 스트림. tool_call 시 JSON 마커 반환."""
-        from google import genai
-        from google.genai import types
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise ImportError(
+                "google-genai is required for GeminiLLM. Install it with: pip install clawops[gemini]"
+            ) from None
 
         client = genai.Client(api_key=self._api_key)
 

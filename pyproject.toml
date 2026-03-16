@@ -55,7 +55,7 @@ dev = [
 agent = ["aiohttp>=3.9.0,<4"]
 openai = ["clawops[agent]", "openai>=2.0.0"]
 anthropic-llm = ["clawops[agent]", "anthropic>=0.40.0"]
-gemini-llm = ["clawops[agent]", "google-genai>=1.60.0"]
+gemini = ["clawops[agent]", "google-genai>=1.60.0"]
 ollama = ["clawops[agent]", "openai>=1.0.0"]
 mistral = ["clawops[agent]", "openai>=1.0.0"]
 groq = ["clawops[agent]", "openai>=1.0.0"]
@@ -72,7 +72,7 @@ tracing = ["opentelemetry-api>=1.20.0"]
 agent-all = [
     "clawops[openai]",
     "clawops[anthropic-llm]",
-    "clawops[gemini-llm]",
+    "clawops[gemini]",
     "clawops[deepgram]",
     "clawops[elevenlabs]",
     "clawops[mcp]",

@@ -61,7 +61,7 @@ STT → LLM → TTS를 개별 조합하는 방식입니다. `PipelineSession`에
 pip install clawops[openai]         # OpenAI Realtime + OpenAI LLM
 
 # Realtime (검증 전)
-pip install clawops[gemini-llm]     # Gemini Realtime + Gemini LLM
+pip install clawops[gemini]     # Gemini Realtime + Gemini LLM
 
 # Pipeline 개별 제공자 (검증 전)
 pip install clawops[deepgram]       # Deepgram STT
