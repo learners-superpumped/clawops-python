@@ -174,6 +174,8 @@ asyncio.run(main())
 | `AgentError` | Agent 관련 에러의 베이스 클래스 |
 | `AgentConnectionError` | WebSocket 연결 실패 |
 
+> 연결 에러(SSL 인증서, WebSocket 등)가 계속된다면 **[트러블슈팅](troubleshooting.md)** 가이드를 참고하세요.
+
 ## 디버그 로깅
 
 ```python

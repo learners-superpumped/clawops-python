@@ -351,6 +351,7 @@ client = ClawOps(
 ## 문서
 
 - **[AI Agent 가이드](docs/agent/)** — 음성 에이전트 상세 사용법, 파이프라인 모드, 커스텀 제공자, MCP 연동
+- **[트러블슈팅](docs/agent/troubleshooting.md)** — SSL 인증서 에러, 연결 실패 등 문제 해결
 
 ## 다른 언어
 
