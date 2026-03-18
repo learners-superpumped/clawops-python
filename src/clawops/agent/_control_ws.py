@@ -90,6 +90,13 @@ class ControlWebSocket:
                         break
 
             except (aiohttp.ClientError, OSError) as e:
+                if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                    log.error(
+                        "SSL 인증서 검증에 실패했습니다. "
+                        "'pip install --upgrade certifi'를 실행해 보세요. "
+                        "자세한 해결 방법: "
+                        "https://github.com/learners-superpumped/clawops-python/blob/main/docs/agent/troubleshooting.md#ssl-인증서-에러-sslcertverificationerror"
+                    )
                 log.warning(f"Control WS error: {e}")
             finally:
                 if self._ws and not self._ws.closed:
