@@ -1,45 +1,77 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Union
 
 from typing_extensions import Required, TypedDict
 
 from .._utils import PropertyInfo
 
+# ── AI Completion 타입 ───────────────────────────────────────────────────────
+
+AIProvider = Union[Literal["openai", "gemini"], str]
+"""지원 AI 제공자. 자유 입력도 허용."""
+
+OpenAIRealtimeModel = Union[Literal["gpt-realtime-1.5", "gpt-4o-mini-realtime"], str]
+"""OpenAI Realtime 모델. 자유 입력도 허용."""
+
+GeminiRealtimeModel = Union[Literal["gemini-2.5-flash-native-audio-preview"], str]
+"""Gemini Realtime 모델. 자유 입력도 허용."""
+
+AIVoice = Union[
+    Literal[
+        "alloy", "ash", "ballad", "coral", "echo",
+        "fable", "marin", "sage", "shimmer", "verse",
+    ],
+    str,
+]
+"""AI 음성 ID. 자유 입력도 허용."""
+
 
 class AIConfigParam(TypedDict, total=False):
     """AI Completion 모드 설정."""
 
-    provider: Required[Annotated[Literal["openai", "gemini"], PropertyInfo(alias="Provider")]]
-    """AI 제공자."""
+    provider: Required[Annotated[AIProvider, PropertyInfo(alias="Provider")]]
+    """AI 제공자. ``'openai'`` 또는 ``'gemini'``."""
 
     model: Required[Annotated[str, PropertyInfo(alias="Model")]]
-    """사용할 AI 모델명."""
+    """사용할 AI 모델명. 예: ``'gpt-realtime-1.5'``, ``'gemini-2.5-flash-native-audio-preview'``."""
 
     api_key: Required[Annotated[str, PropertyInfo(alias="ApiKey")]]
     """AI 제공자의 API 키."""
 
-    voice: Annotated[str, PropertyInfo(alias="Voice")]
-    """음성 (기본값: 'marin')."""
+    voice: Annotated[AIVoice, PropertyInfo(alias="Voice")]
+    """음성 ID (기본값: ``'marin'``). alloy, ash, ballad, coral, echo, fable, marin, sage, shimmer, verse 등."""
 
     language: Annotated[str, PropertyInfo(alias="Language")]
-    """언어 코드 (기본값: 'ko')."""
+    """언어 코드 (기본값: ``'ko'``)."""
 
     messages: Annotated[list[dict[str, str]], PropertyInfo(alias="Messages")]
-    """초기 메시지 (system prompt 등). OpenAI Chat Completions 형식."""
+    """초기 메시지 (system prompt 등). OpenAI Chat Completions 형식.
+
+    예: ``[{"role": "system", "content": "당신은 예약 확인 AI입니다."}]``
+    """
 
     tools: Annotated[list[dict], PropertyInfo(alias="Tools")]
-    """Function calling 도구 정의."""
+    """Function calling 도구 정의. OpenAI 형식."""
 
     greeting: Annotated[bool, PropertyInfo(alias="Greeting")]
-    """통화 시작 시 AI가 먼저 인사할지 여부 (기본값: True)."""
+    """통화 시작 시 AI가 먼저 인사할지 여부 (기본값: ``True``)."""
 
     turn_detection: Annotated[dict, PropertyInfo(alias="TurnDetection")]
-    """턴 감지 설정."""
+    """턴 감지 설정 (기본값: semantic_vad medium)."""
 
+
+# ── Call API 파라미터 ────────────────────────────────────────────────────────
 
 class CallCreateParams(TypedDict, total=False):
-    """발신 전화 생성 요청 파라미터."""
+    """발신 전화 생성 요청 파라미터.
+
+    **3가지 모드:**
+
+    - **VoiceML 모드**: ``url``을 지정하면 VoiceML로 통화를 제어합니다.
+    - **Agent 모드**: ``url``과 ``ai`` 모두 생략하면 Agent SDK로 통화가 연결됩니다.
+    - **AI Completion 모드**: ``ai``를 지정하면 AI가 직접 통화를 처리합니다.
+    """
 
     to: Required[Annotated[str, PropertyInfo(alias="To")]]
     """수신 대상. 전화번호(PSTN) 또는 sip: URI(내선)."""
