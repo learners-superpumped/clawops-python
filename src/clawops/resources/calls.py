@@ -40,7 +40,7 @@ class Calls(SyncAPIResource):
             from_: 발신 번호. 계정에 등록된 번호여야 합니다.
             url: VoiceML 명령을 반환할 URL. AI 모드와 동시 사용 불가.
             ai: AI Completion 모드 설정. provider, model, api_key가 필수.
-                예: ``{"provider": "openai", "model": "gpt-realtime-1.5", "api_key": "sk-..."}``
+                예: ``{"provider": "openai", "model": "gpt-realtime", "api_key": "sk-..."}``
             status_callback: 통화 상태 변경 시 POST 요청을 받을 콜백 URL.
             status_callback_event: 수신할 상태 이벤트 목록 (공백 구분).
             timeout: 발신 타임아웃 (초). 기본값: 60.

@@ -169,7 +169,7 @@ ai_call = client.calls.create(
     from_="07052358010",
     ai={
         "provider": "openai",
-        "model": "gpt-realtime-1.5",
+        "model": "gpt-realtime",
         "api_key": os.environ["OPENAI_API_KEY"],
         "voice": "marin",
         "messages": [{"role": "system", "content": "당신은 예약 확인 AI입니다."}],
