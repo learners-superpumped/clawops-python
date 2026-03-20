@@ -8,7 +8,7 @@ from .._utils import PropertyInfo
 
 # ── Provider별 모델/음성 타입 ────────────────────────────────────────────────
 
-OpenAIRealtimeModel = Union[Literal["gpt-realtime-1.5", "gpt-4o-mini-realtime"], str]
+OpenAIRealtimeModel = Union[Literal["gpt-realtime-1.5"], str]
 """OpenAI Realtime 모델. 자유 입력도 허용."""
 
 OpenAIVoice = Union[
@@ -17,7 +17,7 @@ OpenAIVoice = Union[
 ]
 """OpenAI 음성 ID. 자유 입력도 허용."""
 
-GeminiRealtimeModel = Union[Literal["gemini-2.5-flash-native-audio-preview"], str]
+GeminiRealtimeModel = Union[Literal["gemini-2.5-flash-native-audio-preview-12-2025"], str]
 """Gemini Realtime 모델. 자유 입력도 허용."""
 
 GeminiVoice = Union[
@@ -73,7 +73,7 @@ class GeminiAIConfigParam(TypedDict, total=False):
     """AI 제공자."""
 
     model: Required[Annotated[GeminiRealtimeModel, PropertyInfo(alias="Model")]]
-    """Gemini Realtime 모델. ``'gemini-2.5-flash-native-audio-preview'`` 등."""
+    """Gemini Realtime 모델. ``'gemini-2.5-flash-native-audio-preview-12-2025'`` 등."""
 
     api_key: Required[Annotated[str, PropertyInfo(alias="ApiKey")]]
     """Google API 키."""
