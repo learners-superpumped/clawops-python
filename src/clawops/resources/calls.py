@@ -16,30 +16,37 @@ class Calls(SyncAPIResource):
         *,
         to: str,
         from_: str,
-        url: str,
+        url: str | None = None,
+        ai: dict | None = None,
         status_callback: str | None = None,
         status_callback_event: str | None = None,
+        timeout: int | None = None,
         extra_headers: dict[str, str] | None = None,
         extra_query: dict[str, object] | None = None,
-        timeout: float | None = None,
+        timeout_: float | None = None,
     ) -> Call:
         """발신 전화를 생성합니다.
 
         PSTN 번호로 아웃바운드 전화를 발신합니다.
         From 번호는 계정에 등록된 번호여야 합니다.
 
-        - 예: ``to="01012345678"``
+        **3가지 모드:**
+        - VoiceML 모드: ``url``을 지정하면 VoiceML로 통화를 제어합니다.
+        - Agent 모드: ``url``과 ``ai`` 모두 생략하면 Agent SDK로 통화가 연결됩니다.
+        - AI Completion 모드: ``ai``를 지정하면 AI가 직접 통화를 처리합니다.
 
         Args:
             to: 수신 전화번호.
-            from_: 발신 번호. 계정에 등록된 번호여야 합니다 (예: '07052358010').
-            url: 통화 연결 시 TwiML 명령을 반환할 URL.
+            from_: 발신 번호. 계정에 등록된 번호여야 합니다.
+            url: VoiceML 명령을 반환할 URL. AI 모드와 동시 사용 불가.
+            ai: AI Completion 모드 설정. provider, model, api_key가 필수.
+                예: ``{"provider": "openai", "model": "gpt-realtime-1.5", "api_key": "sk-..."}``
             status_callback: 통화 상태 변경 시 POST 요청을 받을 콜백 URL.
             status_callback_event: 수신할 상태 이벤트 목록 (공백 구분).
-                기본값: 'initiated ringing answered completed'.
+            timeout: 발신 타임아웃 (초). 기본값: 60.
             extra_headers: 추가 HTTP 헤더.
             extra_query: 추가 쿼리 파라미터.
-            timeout: 이 요청의 타임아웃 (초). 클라이언트 기본값을 오버라이드.
+            timeout_: 이 요청의 타임아웃 (초).
 
         Returns:
             생성된 Call 객체.
@@ -51,14 +58,28 @@ class Calls(SyncAPIResource):
             InternalServerError: 발신 실패.
             ServiceUnavailableError: ARI 서비스가 준비되지 않음.
         """
+        ai_body = None
+        if ai:
+            ai_body = strip_not_given({
+                "Provider": ai.get("provider"),
+                "Model": ai.get("model"),
+                "ApiKey": ai.get("api_key"),
+                "Voice": ai.get("voice"),
+                "Language": ai.get("language"),
+                "Messages": ai.get("messages"),
+                "Tools": ai.get("tools"),
+                "Greeting": ai.get("greeting"),
+                "TurnDetection": ai.get("turn_detection"),
+            })
         body = strip_not_given({
-            "To": to, "From": from_, "Url": url,
+            "To": to, "From": from_, "Url": url, "AI": ai_body,
             "StatusCallback": status_callback,
             "StatusCallbackEvent": status_callback_event,
+            "Timeout": timeout,
         })
         return self._client._post(
             f"{self._base_path}/calls", body=body, cast_to=Call,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout_,
         )
 
     def list(
@@ -167,18 +188,43 @@ class Calls(SyncAPIResource):
 class AsyncCalls(AsyncAPIResource):
     """통화(Calls) 비동기 리소스. Calls의 async 버전."""
 
-    async def create(self, *, to: str, from_: str, url: str,
-                     status_callback: str | None = None, status_callback_event: str | None = None,
-                     extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
-                     timeout: float | None = None) -> Call:
+    async def create(
+        self,
+        *,
+        to: str,
+        from_: str,
+        url: str | None = None,
+        ai: dict | None = None,
+        status_callback: str | None = None,
+        status_callback_event: str | None = None,
+        timeout: int | None = None,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout_: float | None = None,
+    ) -> Call:
         """발신 전화를 비동기로 생성합니다. 자세한 내용은 Calls.create를 참고하세요."""
+        ai_body = None
+        if ai:
+            ai_body = strip_not_given({
+                "Provider": ai.get("provider"),
+                "Model": ai.get("model"),
+                "ApiKey": ai.get("api_key"),
+                "Voice": ai.get("voice"),
+                "Language": ai.get("language"),
+                "Messages": ai.get("messages"),
+                "Tools": ai.get("tools"),
+                "Greeting": ai.get("greeting"),
+                "TurnDetection": ai.get("turn_detection"),
+            })
         body = strip_not_given({
-            "To": to, "From": from_, "Url": url,
-            "StatusCallback": status_callback, "StatusCallbackEvent": status_callback_event,
+            "To": to, "From": from_, "Url": url, "AI": ai_body,
+            "StatusCallback": status_callback,
+            "StatusCallbackEvent": status_callback_event,
+            "Timeout": timeout,
         })
         return await self._client._post(
             f"{self._base_path}/calls", body=body, cast_to=Call,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout_,
         )
 
     async def list(self, *, status: Literal["queued", "ringing", "in-progress", "completed", "failed"] | None = None,

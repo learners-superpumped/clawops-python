@@ -7,6 +7,37 @@ from typing_extensions import Required, TypedDict
 from .._utils import PropertyInfo
 
 
+class AIConfigParam(TypedDict, total=False):
+    """AI Completion 모드 설정."""
+
+    provider: Required[Annotated[Literal["openai", "gemini"], PropertyInfo(alias="Provider")]]
+    """AI 제공자."""
+
+    model: Required[Annotated[str, PropertyInfo(alias="Model")]]
+    """사용할 AI 모델명."""
+
+    api_key: Required[Annotated[str, PropertyInfo(alias="ApiKey")]]
+    """AI 제공자의 API 키."""
+
+    voice: Annotated[str, PropertyInfo(alias="Voice")]
+    """음성 (기본값: 'marin')."""
+
+    language: Annotated[str, PropertyInfo(alias="Language")]
+    """언어 코드 (기본값: 'ko')."""
+
+    messages: Annotated[list[dict[str, str]], PropertyInfo(alias="Messages")]
+    """초기 메시지 (system prompt 등). OpenAI Chat Completions 형식."""
+
+    tools: Annotated[list[dict], PropertyInfo(alias="Tools")]
+    """Function calling 도구 정의."""
+
+    greeting: Annotated[bool, PropertyInfo(alias="Greeting")]
+    """통화 시작 시 AI가 먼저 인사할지 여부 (기본값: True)."""
+
+    turn_detection: Annotated[dict, PropertyInfo(alias="TurnDetection")]
+    """턴 감지 설정."""
+
+
 class CallCreateParams(TypedDict, total=False):
     """발신 전화 생성 요청 파라미터."""
 
@@ -16,14 +47,20 @@ class CallCreateParams(TypedDict, total=False):
     from_: Required[Annotated[str, PropertyInfo(alias="From")]]
     """발신 번호. 계정에 등록된 번호여야 합니다."""
 
-    url: Required[Annotated[str, PropertyInfo(alias="Url")]]
-    """통화 연결 시 TwiML 명령을 반환할 URL."""
+    url: Annotated[str, PropertyInfo(alias="Url")]
+    """통화 연결 시 VoiceML 명령을 반환할 URL. AI 모드와 동시 사용 불가."""
+
+    ai: Annotated[AIConfigParam, PropertyInfo(alias="AI")]
+    """AI Completion 모드 설정. 이 필드가 있으면 AI가 통화를 처리합니다."""
 
     status_callback: Annotated[str, PropertyInfo(alias="StatusCallback")]
     """통화 상태 변경 시 POST 요청을 받을 콜백 URL."""
 
     status_callback_event: Annotated[str, PropertyInfo(alias="StatusCallbackEvent")]
     """수신할 상태 이벤트 목록 (공백 구분)."""
+
+    timeout: Annotated[int, PropertyInfo(alias="Timeout")]
+    """발신 타임아웃 (초). 기본값: 60."""
 
 
 class CallListParams(TypedDict, total=False):
