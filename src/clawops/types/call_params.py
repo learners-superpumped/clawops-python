@@ -21,7 +21,14 @@ GeminiRealtimeModel = Union[Literal["gemini-2.5-flash-native-audio-preview-12-20
 """Gemini Realtime 모델. 자유 입력도 허용."""
 
 GeminiVoice = Union[
-    Literal["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr"],
+    Literal[
+        "Puck", "Zephyr", "Kore", "Orus", "Autonoe", "Umbriel", "Erinome",
+        "Laomedeia", "Schedar", "Achird", "Sadachbia", "Fenrir", "Aoede",
+        "Enceladus", "Algieba", "Algenib", "Achernar", "Gacrux",
+        "Zubenelgenubi", "Sadaltager", "Charon", "Leda", "Callirrhoe",
+        "Iapetus", "Despina", "Rasalgethi", "Alnilam", "Pulcherrima",
+        "Vindemiatrix", "Sulafat",
+    ],
     str,
 ]
 """Gemini 음성 ID. 자유 입력도 허용."""
@@ -79,7 +86,7 @@ class GeminiAIConfigParam(TypedDict, total=False):
     """Google API 키."""
 
     voice: Annotated[GeminiVoice, PropertyInfo(alias="Voice")]
-    """Gemini 음성 ID. Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr."""
+    """Gemini 음성 ID. Puck, Zephyr, Kore, Orus, Autonoe, Umbriel, Erinome 등."""
 
     language: Annotated[str, PropertyInfo(alias="Language")]
     """언어 코드 (기본값: ``'ko'``)."""
