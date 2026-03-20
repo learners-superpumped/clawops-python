@@ -8,7 +8,7 @@ from .._utils import PropertyInfo
 
 # ── Provider별 모델/음성 타입 ────────────────────────────────────────────────
 
-OpenAIRealtimeModel = Union[Literal["gpt-realtime-1.5"], str]
+OpenAIRealtimeModel = Union[Literal["gpt-realtime"], str]
 """OpenAI Realtime 모델. 자유 입력도 허용."""
 
 OpenAIVoice = Union[
@@ -39,7 +39,7 @@ class OpenAIAIConfigParam(TypedDict, total=False):
     """AI 제공자."""
 
     model: Required[Annotated[OpenAIRealtimeModel, PropertyInfo(alias="Model")]]
-    """OpenAI Realtime 모델. ``'gpt-realtime-1.5'``, ``'gpt-4o-mini-realtime'`` 등."""
+    """OpenAI Realtime 모델. ``'gpt-realtime'``, ``'gpt-4o-mini-realtime'`` 등."""
 
     api_key: Required[Annotated[str, PropertyInfo(alias="ApiKey")]]
     """OpenAI API 키."""
