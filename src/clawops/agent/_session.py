@@ -41,6 +41,9 @@ class CallSession:
         self._event_handlers: dict[str, list[Callable[..., Awaitable[None]]]] = {}
         self._ended_event = asyncio.Event()
 
+        # Transfer
+        self._transfer_fn: Callable[[dict], Awaitable[dict]] | None = None
+
         # DTMF
         self._send_dtmf_fn: Callable[[str], Awaitable[None]] | None = None
         self._media_ws: Any | None = None  # is_connected 체크용
@@ -131,6 +134,32 @@ class CallSession:
         else:
             log.info(f"DTMF collected: {result}")
         return result
+
+    async def transfer(
+        self,
+        to: str,
+        *,
+        mode: str = "blind",
+        after_transfer: str = "terminate",
+        hold_media: str = "ringback",
+        whisper: str | None = None,
+        context: dict | None = None,
+        caller_id: str | None = None,
+        timeout: int = 30,
+    ) -> dict:
+        """Transfer the current call to another phone number."""
+        if not self._transfer_fn:
+            raise RuntimeError("transfer not available")
+        return await self._transfer_fn({
+            "to": to,
+            "mode": mode,
+            "afterTransfer": after_transfer,
+            "holdMedia": hold_media,
+            "whisper": whisper,
+            "context": context,
+            "callerId": caller_id,
+            "timeout": timeout,
+        })
 
     async def send_dtmf_sequence(self, digits: str) -> None:
         """여러 DTMF digit을 순서대로 전송한다."""

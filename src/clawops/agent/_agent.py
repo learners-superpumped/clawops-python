@@ -292,6 +292,7 @@ class ClawOpsAgent:
             call._hangup_fn = _graceful_hangup
             call._send_dtmf_fn = media_ws.send_dtmf
             call._media_ws = media_ws
+            call._transfer_fn = lambda params: self._control_ws.request_transfer(call.call_id, params)
 
             self._call_sessions[call.call_id] = session
 
