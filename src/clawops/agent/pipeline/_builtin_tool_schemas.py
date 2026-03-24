@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 from .._builtin_tools import BuiltinTool
@@ -48,10 +49,57 @@ _SEND_DTMF = {
     },
 }
 
+_TRANSFER_CALL = {
+    "name": "transfer_call",
+    "description": "Transfer the current call to another phone number. Use for blind transfer (direct handoff) or warm transfer (with whisper message to the target).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "to": {"type": "string", "description": "Phone number to transfer to"},
+            "mode": {
+                "type": "string",
+                "enum": ["blind", "warm"],
+                "default": "blind",
+                "description": "blind: direct transfer, warm: play whisper to target first",
+            },
+            "after_transfer": {
+                "type": "string",
+                "enum": ["terminate", "return"],
+                "default": "terminate",
+                "description": "terminate: end AI session, return: AI resumes after transfer ends",
+            },
+            "hold_media": {
+                "type": "string",
+                "default": "ringback",
+                "description": "Hold media for customer: ringback, moh, silence",
+            },
+            "whisper": {
+                "type": "string",
+                "description": "Message to speak to transfer target before connecting customer (warm mode only)",
+            },
+            "context": {
+                "type": "object",
+                "description": "Structured data to pass to transfer target via webhook",
+            },
+            "caller_id": {
+                "type": "string",
+                "description": "Override caller ID for the transfer leg",
+            },
+            "timeout": {
+                "type": "integer",
+                "default": 30,
+                "description": "Seconds to wait for transfer target to answer",
+            },
+        },
+        "required": ["to"],
+    },
+}
+
 _TOOL_MAP: dict[BuiltinTool, dict[str, Any]] = {
     BuiltinTool.HANG_UP: _HANG_UP,
     BuiltinTool.COLLECT_DTMF: _COLLECT_DTMF,
     BuiltinTool.SEND_DTMF: _SEND_DTMF,
+    BuiltinTool.TRANSFER_CALL: _TRANSFER_CALL,
 }
 
 BUILTIN_TOOL_NAMES = frozenset(s["name"] for s in _TOOL_MAP.values())
@@ -139,6 +187,12 @@ async def execute_builtin_tool(
         try:
             await call.send_dtmf_sequence(args.get("digits", ""))
             return "sent"
+        except Exception as e:
+            return f"Error: {e}"
+    if func_name == "transfer_call":
+        try:
+            result = await call.transfer(**args)
+            return json.dumps(result)
         except Exception as e:
             return f"Error: {e}"
     return None

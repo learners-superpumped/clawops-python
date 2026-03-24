@@ -14,6 +14,7 @@ class BuiltinTool(StrEnum):
     HANG_UP = "hang_up"
     COLLECT_DTMF = "collect_dtmf"
     SEND_DTMF = "send_dtmf"
+    TRANSFER_CALL = "transfer_call"
 
     ALL = "all"
     NONE = "none"
@@ -25,7 +26,7 @@ def resolve_builtin_tools(
     """사용자 입력을 실제 도구 set으로 변환."""
     if isinstance(value, BuiltinTool):
         if value == BuiltinTool.ALL:
-            return {BuiltinTool.HANG_UP, BuiltinTool.COLLECT_DTMF, BuiltinTool.SEND_DTMF}
+            return {BuiltinTool.HANG_UP, BuiltinTool.COLLECT_DTMF, BuiltinTool.SEND_DTMF, BuiltinTool.TRANSFER_CALL}
         if value == BuiltinTool.NONE:
             return set()
         return {value}
