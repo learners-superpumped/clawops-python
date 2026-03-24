@@ -50,6 +50,7 @@ class ControlWebSocket:
         self._session: aiohttp.ClientSession | None = None
         self._running = False
         self._connected = asyncio.Event()
+        self._transfer_futures: dict[str, asyncio.Future] = {}
 
     async def wait_connected(self, timeout: float = 10.0) -> None:
         """Control WS 연결이 완료될 때까지 대기한다."""
@@ -86,6 +87,13 @@ class ControlWebSocket:
                             await self._on_call_ringing(data)
                         elif event == "call.failed" and self._on_call_failed:
                             await self._on_call_failed(data)
+                        elif event in (
+                            "call.transfer.started",
+                            "call.transfer.connected",
+                            "call.transfer.completed",
+                            "call.transfer.failed",
+                        ):
+                            self._on_transfer_event(data)
                     elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
                         break
 
@@ -111,12 +119,37 @@ class ControlWebSocket:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, MAX_RECONNECT_DELAY)
 
+    async def request_transfer(self, call_id: str, transfer_params: dict) -> dict:
+        """콜 전환을 요청하고 완료/실패 응답을 기다린다."""
+        future = asyncio.get_event_loop().create_future()
+        self._transfer_futures[call_id] = future
+        await self._ws.send_str(json.dumps({
+            "event": "call.transfer",
+            "callId": call_id,
+            "transfer": transfer_params,
+        }))
+        timeout = transfer_params.get("timeout", 30) + 10
+        return await asyncio.wait_for(future, timeout=timeout)
+
+    def _on_transfer_event(self, data: dict) -> None:
+        """전환 관련 이벤트를 처리하여 대기 중인 Future를 resolve한다."""
+        call_id = data.get("callId")
+        event = data.get("event")
+        if not call_id or call_id not in self._transfer_futures:
+            return
+        if event in ("call.transfer.completed", "call.transfer.failed"):
+            self._transfer_futures.pop(call_id).set_result(data.get("transfer", {}))
+
     async def send(self, data: dict[str, Any]) -> None:
         if self._ws and not self._ws.closed:
             await self._ws.send_str(json.dumps(data))
 
     async def close(self) -> None:
         self._running = False
+        for fut in self._transfer_futures.values():
+            if not fut.done():
+                fut.cancel()
+        self._transfer_futures.clear()
         if self._ws and not self._ws.closed:
             await self._ws.close()
         if self._session:
