@@ -50,6 +50,29 @@ async def on_start(call):
 asyncio.run(agent.serve())  # Ctrl+C로 종료
 ```
 
+### Call Transfer (통화 전환)
+
+AI가 통화 중 다른 번호로 전환할 수 있습니다. Blind(즉시)와 Warm(안내 후) 모드를 지원합니다.
+
+```python
+from clawops.agent import ClawOpsAgent, OpenAIRealtime, BuiltinTool
+
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=OpenAIRealtime(
+        system_prompt="고객 문의를 처리하고, 필요하면 상담원에게 전환하세요.",
+    ),
+    builtin_tools=[BuiltinTool.HANG_UP, BuiltinTool.TRANSFER_CALL],
+)
+
+# 코드에서 직접 전환도 가능
+@agent.on("call_start")
+async def on_start(call):
+    # 조건에 따라 즉시 전환
+    if should_transfer:
+        await call.transfer("01012345678", mode="warm", whisper="VIP 고객입니다.")
+```
+
 ### MCP 서버 연동
 
 MCP 서버를 연결하여 AI에게 외부 도구를 제공할 수 있습니다.

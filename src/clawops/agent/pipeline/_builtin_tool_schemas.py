@@ -59,27 +59,16 @@ _TRANSFER_CALL = {
             "mode": {
                 "type": "string",
                 "enum": ["blind", "warm"],
-                "default": "blind",
-                "description": "blind: direct transfer, warm: play whisper to target first",
+                "description": "blind: direct transfer (default), warm: play whisper to target first",
             },
             "after_transfer": {
                 "type": "string",
                 "enum": ["terminate", "return"],
-                "default": "terminate",
-                "description": "terminate: end AI session, return: AI resumes after transfer ends",
-            },
-            "hold_media": {
-                "type": "string",
-                "default": "ringback",
-                "description": "Hold media for customer: ringback, moh, silence",
+                "description": "terminate: end AI session (default), return: AI resumes after transfer ends",
             },
             "whisper": {
                 "type": "string",
                 "description": "Message to speak to transfer target before connecting customer (warm mode only)",
-            },
-            "context": {
-                "type": "object",
-                "description": "Structured data to pass to transfer target via webhook",
             },
             "caller_id": {
                 "type": "string",
@@ -87,8 +76,7 @@ _TRANSFER_CALL = {
             },
             "timeout": {
                 "type": "integer",
-                "default": 30,
-                "description": "Seconds to wait for transfer target to answer",
+                "description": "Seconds to wait for transfer target to answer (default 30)",
             },
         },
         "required": ["to"],
@@ -191,8 +179,12 @@ async def execute_builtin_tool(
             return f"Error: {e}"
     if func_name == "transfer_call":
         try:
-            result = await call.transfer(**args)
-            return json.dumps(result)
+            # Fire-and-forget: transfer 요청만 보내고 즉시 반환.
+            # call-engine이 transfer 시작 시 media WS를 닫으므로,
+            # 결과를 await하면 LLM 세션이 먼저 종료된다.
+            import asyncio
+            asyncio.ensure_future(call.transfer(**args))
+            return json.dumps({"status": "transfer_initiated"})
         except Exception as e:
             return f"Error: {e}"
     return None
