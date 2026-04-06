@@ -133,7 +133,7 @@ class GeminiRealtime:
         *,
         api_key: str | None = None,
         system_prompt: str = "",
-        model: str = "gemini-2.5-flash-native-audio-preview-12-2025",
+        model: str = "gemini-3.1-flash-live-preview",
         voice: str = "Kore",
         language: str = "ko",
         greeting: bool = True,
@@ -220,7 +220,9 @@ class GeminiRealtime:
         }
 
         if self._system_prompt:
-            config["system_instruction"] = self._system_prompt
+            config["system_instruction"] = types.Content(
+                parts=[types.Part(text=self._system_prompt)],
+            )
 
         if tool_schemas:
             config["tools"] = [{"function_declarations": tool_schemas}]
@@ -245,12 +247,8 @@ class GeminiRealtime:
         log.info("Gemini Live SDK session connected")
 
         if self._greeting:
-            await self._session.send_client_content(
-                turns=types.Content(
-                    role="user",
-                    parts=[types.Part(text="인사해 주세요.")],
-                ),
-                turn_complete=True,
+            await self._session.send_realtime_input(
+                text="인사해 주세요.",
             )
 
         self._tasks.append(asyncio.create_task(self._receive_loop()))
@@ -276,14 +274,8 @@ class GeminiRealtime:
     async def feed_dtmf(self, digits: str) -> None:
         """DTMF digit을 LLM 컨텍스트에 주입하고 응답을 트리거한다."""
         if self._session:
-            from google.genai import types
-
-            await self._session.send_client_content(
-                turns=types.Content(
-                    role="user",
-                    parts=[types.Part(text=f"[DTMF 입력: {digits}]")],
-                ),
-                turn_complete=True,
+            await self._session.send_realtime_input(
+                text=f"[DTMF 입력: {digits}]",
             )
 
     async def _receive_loop(self) -> None:

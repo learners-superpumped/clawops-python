@@ -10,18 +10,18 @@ def test_gemini_realtime_init():
     session = GeminiRealtime(
         api_key="AIza-test",
         system_prompt="You are a helpful assistant.",
-        model="gemini-2.5-flash-native-audio-preview-12-2025",
+        model="gemini-3.1-flash-live-preview",
         voice="Kore",
     )
     assert session._api_key == "AIza-test"
     assert session._system_prompt == "You are a helpful assistant."
-    assert session._model == "gemini-2.5-flash-native-audio-preview-12-2025"
+    assert session._model == "gemini-3.1-flash-live-preview"
     assert session._voice == "Kore"
 
 
 def test_gemini_realtime_defaults():
     session = GeminiRealtime(api_key="AIza-test")
-    assert session._model == "gemini-2.5-flash-native-audio-preview-12-2025"
+    assert session._model == "gemini-3.1-flash-live-preview"
     assert session._voice == "Kore"
     assert session._language == "ko"
     assert session._greeting is True
@@ -44,10 +44,12 @@ async def test_gemini_sdk_start_connects():
     )
 
     mock_live_session = AsyncMock()
-    mock_live_session.receive = AsyncMock(return_value=AsyncMock(
-        __aiter__=lambda self: self,
-        __anext__=AsyncMock(side_effect=StopAsyncIteration),
-    ))
+    mock_live_session.receive = AsyncMock(
+        return_value=AsyncMock(
+            __aiter__=lambda self: self,
+            __anext__=AsyncMock(side_effect=StopAsyncIteration),
+        )
+    )
     mock_live_session.send_client_content = AsyncMock()
 
     mock_ctx = AsyncMock()
@@ -70,7 +72,7 @@ async def test_gemini_sdk_start_connects():
 
     # SDK connect 호출 확인
     assert "model" in captured_kwargs
-    assert captured_kwargs["model"] == "gemini-2.5-flash-native-audio-preview-12-2025"
+    assert captured_kwargs["model"] == "gemini-3.1-flash-live-preview"
 
     config = captured_kwargs["config"]
 
@@ -105,7 +107,7 @@ async def test_gemini_sdk_feed_audio():
     session._call = MagicMock()
 
     # G.711 ulaw 160 bytes (20ms at 8kHz, silence)
-    ulaw_chunk = b'\xff' * 160
+    ulaw_chunk = b"\xff" * 160
     await session.feed_audio(ulaw_chunk, timestamp=0)
 
     # SDK send_realtime_input 호출 확인

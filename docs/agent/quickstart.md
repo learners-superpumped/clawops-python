@@ -98,20 +98,18 @@ agent = ClawOpsAgent(
 )
 ```
 
-> **Known Issue (2026-03-12):** `gemini-2.5-flash-native-audio-preview-12-2025` 모델에서 function calling(tool use)과 실시간 오디오 스트리밍을 함께 사용할 때 WebSocket 1008 (Policy Violation) 에러로 세션이 간헐적으로 종료될 수 있습니다. 이는 Google Gemini Live API의 서버 측 알려진 이슈입니다.
-> - [Google AI Forum #114644](https://discuss.ai.google.dev/t/gemini-live-api-websocket-error-1008-operation-is-not-implemented-or-supported-or-enabled/114644)
-> - [googleapis/js-genai #1236](https://github.com/googleapis/js-genai/issues/1236)
+> **Note:** 기본 모델이 `gemini-3.1-flash-live-preview`로 업데이트되었습니다. 이전 `gemini-2.5-flash-native-audio-preview-12-2025` 모델은 더 이상 지원되지 않습니다.
 
 ### 음성 옵션
 
-| 음성 | 특징 |
-|------|------|
-| `marin` | 기본값, 자연스러운 여성 음성 |
-| `ash` | 자연스러운 남성 음성 |
-| `ballad` | 부드러운 남성 음성 |
-| `coral` | 밝은 여성 음성 |
-| `sage` | 차분한 여성 음성 |
-| `verse` | 중성적 음성 |
+| 음성     | 특징                         |
+| -------- | ---------------------------- |
+| `marin`  | 기본값, 자연스러운 여성 음성 |
+| `ash`    | 자연스러운 남성 음성         |
+| `ballad` | 부드러운 남성 음성           |
+| `coral`  | 밝은 여성 음성               |
+| `sage`   | 차분한 여성 음성             |
+| `verse`  | 중성적 음성                  |
 
 ## 발신 (Outbound Call)
 
@@ -139,10 +137,10 @@ async def main():
 asyncio.run(main())
 ```
 
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `to` | `str` | 필수 | 수신 전화번호 |
-| `timeout` | `int` | `60` | 무응답 대기 시간 (초) |
+| 파라미터  | 타입  | 기본값 | 설명                  |
+| --------- | ----- | ------ | --------------------- |
+| `to`      | `str` | 필수   | 수신 전화번호         |
+| `timeout` | `int` | `60`   | 무응답 대기 시간 (초) |
 
 ## 에러 처리
 
@@ -169,10 +167,10 @@ async def main():
 asyncio.run(main())
 ```
 
-| 에러 | 설명 |
-|------|------|
-| `AgentError` | Agent 관련 에러의 베이스 클래스 |
-| `AgentConnectionError` | WebSocket 연결 실패 |
+| 에러                   | 설명                            |
+| ---------------------- | ------------------------------- |
+| `AgentError`           | Agent 관련 에러의 베이스 클래스 |
+| `AgentConnectionError` | WebSocket 연결 실패             |
 
 > 연결 에러(SSL 인증서, WebSocket 등)가 계속된다면 **[트러블슈팅](troubleshooting.md)** 가이드를 참고하세요.
 

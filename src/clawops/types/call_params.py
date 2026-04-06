@@ -17,17 +17,41 @@ OpenAIVoice = Union[
 ]
 """OpenAI 음성 ID. 자유 입력도 허용."""
 
-GeminiRealtimeModel = Union[Literal["gemini-2.5-flash-native-audio-preview-12-2025"], str]
+GeminiRealtimeModel = Union[Literal["gemini-3.1-flash-live-preview"], str]
 """Gemini Realtime 모델. 자유 입력도 허용."""
 
 GeminiVoice = Union[
     Literal[
-        "Puck", "Zephyr", "Kore", "Orus", "Autonoe", "Umbriel", "Erinome",
-        "Laomedeia", "Schedar", "Achird", "Sadachbia", "Fenrir", "Aoede",
-        "Enceladus", "Algieba", "Algenib", "Achernar", "Gacrux",
-        "Zubenelgenubi", "Sadaltager", "Charon", "Leda", "Callirrhoe",
-        "Iapetus", "Despina", "Rasalgethi", "Alnilam", "Pulcherrima",
-        "Vindemiatrix", "Sulafat",
+        "Puck",
+        "Zephyr",
+        "Kore",
+        "Orus",
+        "Autonoe",
+        "Umbriel",
+        "Erinome",
+        "Laomedeia",
+        "Schedar",
+        "Achird",
+        "Sadachbia",
+        "Fenrir",
+        "Aoede",
+        "Enceladus",
+        "Algieba",
+        "Algenib",
+        "Achernar",
+        "Gacrux",
+        "Zubenelgenubi",
+        "Sadaltager",
+        "Charon",
+        "Leda",
+        "Callirrhoe",
+        "Iapetus",
+        "Despina",
+        "Rasalgethi",
+        "Alnilam",
+        "Pulcherrima",
+        "Vindemiatrix",
+        "Sulafat",
     ],
     str,
 ]
@@ -35,6 +59,7 @@ GeminiVoice = Union[
 
 
 # ── Provider별 AI 설정 ───────────────────────────────────────────────────────
+
 
 class OpenAIAIConfigParam(TypedDict, total=False):
     """OpenAI provider AI 설정.
@@ -80,7 +105,7 @@ class GeminiAIConfigParam(TypedDict, total=False):
     """AI 제공자."""
 
     model: Required[Annotated[GeminiRealtimeModel, PropertyInfo(alias="Model")]]
-    """Gemini Realtime 모델. ``'gemini-2.5-flash-native-audio-preview-12-2025'`` 등."""
+    """Gemini Realtime 모델. ``'gemini-3.1-flash-live-preview'`` 등."""
 
     api_key: Required[Annotated[str, PropertyInfo(alias="ApiKey")]]
     """Google API 키."""
@@ -106,6 +131,7 @@ AIConfigParam = Union[OpenAIAIConfigParam, GeminiAIConfigParam]
 
 
 # ── Call API 파라미터 ────────────────────────────────────────────────────────
+
 
 class CallCreateParams(TypedDict, total=False):
     """발신 전화 생성 요청 파라미터.
