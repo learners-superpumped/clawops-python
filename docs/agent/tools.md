@@ -37,6 +37,51 @@ async def search_products(
 
 ---
 
+## Tool Config (도구 실행 설정)
+
+`tool_config`로 도구 실행 시 동작을 설정합니다.
+
+```python
+from clawops.agent import ClawOpsAgent, ToolConfig
+
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=session,
+    tool_config=ToolConfig(
+        hold_audio=True,
+    ),
+)
+```
+
+### Hold Audio (대기 음악)
+
+AI가 도구를 실행하는 동안 고객에게 대기 음악을 재생합니다. 외부 API 호출 등 시간이 걸리는 도구 실행 중 무음을 방지합니다.
+
+| 값 | 설명 |
+| :--- | :--- |
+| `True` | 기본 차임 멜로디 재생 (~10초 루프) |
+| `"./hold_music.wav"` | WAV 파일 경로 (16-bit PCM, 자동 리샘플링/모노 변환) |
+| `b"..."` | raw µ-law 오디오 데이터 |
+| `False` | 비활성화 **(기본값)** |
+
+```python
+# 기본 차임 사용
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=session,
+    tool_config=ToolConfig(hold_audio=True),
+)
+
+# 커스텀 WAV 파일
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=session,
+    tool_config=ToolConfig(hold_audio="./hold_music.wav"),
+)
+```
+
+---
+
 ## 내장 Tool (Built-in Tools)
 
 Agent는 통화 제어를 위한 내장 도구를 기본 제공합니다. `BuiltinTool`을 사용해 어떤 내장 도구를 활성화할지 제어할 수 있습니다.
