@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 import signal
-from typing import Any, Callable, Awaitable
+from typing import Any, Callable, Awaitable, TypedDict
 
 from .._exceptions import AgentError
 from ._builtin_tools import BuiltinTool, resolve_builtin_tools
@@ -28,6 +28,13 @@ from .tracing._spans import call_span, mcp_connect_span, setup_tracing
 log = logging.getLogger("clawops.agent")
 
 
+class ToolConfig(TypedDict, total=False):
+    """Tool 실행 관련 설정."""
+
+    hold_audio: bool | str | bytes
+    """Tool 실행 중 재생할 hold audio. True=기본 차임, str=wav 파일 경로, bytes=raw ulaw."""
+
+
 class ClawOpsAgent:
     def __init__(
         self,
@@ -43,7 +50,7 @@ class ClawOpsAgent:
         tracing: TracingConfig | None = None,
         builtin_tools: BuiltinTool | list[BuiltinTool] = BuiltinTool.ALL,
         passive_dtmf_debounce_ms: int = 500,
-        hold_audio: bool | str | bytes = False,
+        tool_config: ToolConfig | None = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -72,7 +79,8 @@ class ClawOpsAgent:
         if self._tracing is not None:
             setup_tracing(self._tracing)
 
-        self._hold_audio_chunks: list[bytes] | None = load_hold_audio(hold_audio) if hold_audio else None
+        _hold_audio = tool_config.get("hold_audio", False) if tool_config else False
+        self._hold_audio_chunks: list[bytes] | None = load_hold_audio(_hold_audio) if _hold_audio else None
 
         self._builtin_tools = resolve_builtin_tools(builtin_tools)
         self._passive_dtmf_debounce_ms = passive_dtmf_debounce_ms
