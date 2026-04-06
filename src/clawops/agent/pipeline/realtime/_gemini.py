@@ -161,11 +161,11 @@ class GeminiRealtime:
         self._session: Any | None = None  # AsyncLiveSession
         self._call: CallSession | None = None
         self._sent_audio_chunks: int = 0
+        self._pending_tool_call: Any | None = None
         self._tasks: list[asyncio.Task[Any]] = []
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
         self._audio_remainder: bytes = b""  # 160B 미만 잔여 ulaw 버퍼
-        self._tool_call_in_progress: bool = False
         self._hold_audio_chunks: list[bytes] | None = None
 
     def set_hold_audio(self, chunks: list[bytes]) -> None:
@@ -254,7 +254,7 @@ class GeminiRealtime:
         self._tasks.append(asyncio.create_task(self._receive_loop()))
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
-        if not self._session or self._tool_call_in_progress:
+        if not self._session:
             return
 
         # G.711 ulaw 8kHz → PCM16 8kHz → PCM16 16kHz
@@ -278,6 +278,9 @@ class GeminiRealtime:
                 text=f"[DTMF 입력: {digits}]",
             )
 
+    # Gemini는 tool_call 후에도 오디오를 계속 보내므로, 이 시간 내 응답이 없으면 drain 완료로 간주
+    _TOOL_DRAIN_TIMEOUT = 0.3
+
     async def _receive_loop(self) -> None:
         if not self._session:
             return
@@ -285,8 +288,20 @@ class GeminiRealtime:
             # SDK의 receive()는 turn_complete 시 iterator가 종료되므로
             # 매 턴마다 다시 호출해야 한다.
             while self._session:
-                async for response in self._session.receive():
-                    await self._handle_response(response)
+                self._pending_tool_call = None
+                it = self._session.receive().__aiter__()
+                try:
+                    while True:
+                        if self._pending_tool_call:
+                            response = await asyncio.wait_for(it.__anext__(), timeout=self._TOOL_DRAIN_TIMEOUT)
+                        else:
+                            response = await it.__anext__()
+                        await self._handle_response(response)
+                except (StopAsyncIteration, asyncio.TimeoutError):
+                    pass
+                if self._pending_tool_call:
+                    await self._handle_tool_calls(self._pending_tool_call)
+                    self._pending_tool_call = None
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -339,13 +354,14 @@ class GeminiRealtime:
         # ── Tool call ──
         tool_call = getattr(response, "tool_call", None)
         if tool_call:
-            await self._handle_tool_calls(tool_call)
+            self._pending_tool_call = tool_call
 
         # ── Tool call cancellation ──
         tool_cancellation = getattr(response, "tool_call_cancellation", None)
         if tool_cancellation:
             ids = getattr(tool_cancellation, "ids", [])
             log.info(f"Gemini tool call cancelled: {ids}")
+            self._pending_tool_call = None
 
     async def _handle_audio_data(self, audio_data: bytes) -> None:
         """PCM16 24kHz raw bytes → G.711 ulaw 8kHz 변환 후 전송."""
@@ -376,8 +392,6 @@ class GeminiRealtime:
             self._audio_remainder = b""
 
     async def _handle_tool_calls(self, tool_call: Any) -> None:
-        # 도구 호출 중에는 오디오 입력 중단 (Gemini가 tool call 상태에서 audio input 수신 시 1008 에러)
-        self._tool_call_in_progress = True
         function_calls = getattr(tool_call, "function_calls", [])
         responses: list[types.FunctionResponse] = []
 
@@ -439,7 +453,6 @@ class GeminiRealtime:
             await self._session.send_tool_response(
                 function_responses=responses,
             )
-        self._tool_call_in_progress = False
 
     def _build_tool_schemas(self) -> list[dict[str, Any]]:
         """ToolRegistry의 스키마를 Gemini functionDeclarations 형식으로 변환."""
