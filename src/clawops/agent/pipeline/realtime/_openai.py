@@ -30,6 +30,7 @@ except ImportError:
 
 from ..._audio import ulaw_to_pcm16
 from ..._builtin_tools import BuiltinTool
+from ..._hold_audio import HoldAudioPlayer
 from ..._recorder import AudioRecorder
 from ..._session import CallSession
 from ..._tool import ToolRegistry
@@ -92,9 +93,7 @@ class OpenAIRealtime:
         recorder: AudioRecorder | None = None,
     ) -> None:
         if not _HAS_OPENAI:
-            raise ImportError(
-                "openai is required for OpenAIRealtime. Install it with: pip install clawops[openai]"
-            )
+            raise ImportError("openai is required for OpenAIRealtime. Install it with: pip install clawops[openai]")
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY", "")
         if turn_detection is None:
@@ -122,8 +121,13 @@ class OpenAIRealtime:
         self._recorder = recorder
         self._tasks: list[asyncio.Task[Any]] = []
         self._pending_tool_tasks: set[asyncio.Task[Any]] = set()
+        self._hold_audio_chunks: list[bytes] | None = None
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
+
+    def set_hold_audio(self, chunks: list[bytes]) -> None:
+        """Tool 실행 중 재생할 hold audio 청크를 설정한다."""
+        self._hold_audio_chunks = chunks
 
     def set_tool_registry(self, registry: ToolRegistry) -> None:
         """콜별로 fork된 ToolRegistry를 주입한다."""
@@ -348,6 +352,12 @@ class OpenAIRealtime:
                 self._call.metrics.record_tool_call()
             source = "mcp" if func_name in self._tools._mcp_tools else "local"
 
+            player = (
+                HoldAudioPlayer(self._call, self._hold_audio_chunks) if self._hold_audio_chunks and self._call else None
+            )
+            if player:
+                await player.start()
+
             with tool_call_span(func_name, source):
                 try:
                     result = await self._tools.call(func_name, args)
@@ -358,6 +368,9 @@ class OpenAIRealtime:
                     if self._call:
                         self._call.metrics.record_tool_error(e)
                     result = f"Error: {e}"
+                finally:
+                    if player:
+                        await player.stop()
 
             log.debug(f"Tool result: {func_name} -> {str(result)[:200]}")
 
@@ -396,9 +409,7 @@ class OpenAIRealtime:
         # conversation.item.truncate()는 오디오와 transcript를 모두 잘라내어
         # 대화 맥락을 손실시키므로 호출하지 않는다.
         log.info(
-            f"[Interrupt] item={pb.item_id} "
-            f"played={pb.elapsed_ms(self._latest_media_ts)}ms "
-            f"total={pb.total_audio_ms}ms"
+            f"[Interrupt] item={pb.item_id} played={pb.elapsed_ms(self._latest_media_ts)}ms total={pb.total_audio_ms}ms"
         )
 
         self._playback = None

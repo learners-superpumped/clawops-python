@@ -14,6 +14,7 @@ from typing import Any, Callable, Awaitable
 from .._exceptions import AgentError
 from ._builtin_tools import BuiltinTool, resolve_builtin_tools
 from ._control_ws import ControlWebSocket
+from ._hold_audio import load_hold_audio
 from .mcp._client import MCPClient
 from ._media_ws import MediaWebSocket
 from ._session import CallSession
@@ -42,6 +43,7 @@ class ClawOpsAgent:
         tracing: TracingConfig | None = None,
         builtin_tools: BuiltinTool | list[BuiltinTool] = BuiltinTool.ALL,
         passive_dtmf_debounce_ms: int = 500,
+        hold_audio: bool | str | bytes = False,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -69,6 +71,8 @@ class ClawOpsAgent:
 
         if self._tracing is not None:
             setup_tracing(self._tracing)
+
+        self._hold_audio_chunks: list[bytes] | None = load_hold_audio(hold_audio) if hold_audio else None
 
         self._builtin_tools = resolve_builtin_tools(builtin_tools)
         self._passive_dtmf_debounce_ms = passive_dtmf_debounce_ms
@@ -257,6 +261,8 @@ class ClawOpsAgent:
                 session.set_recorder(recorder)
             if hasattr(session, "set_builtin_tools"):
                 session.set_builtin_tools(self._builtin_tools)
+            if self._hold_audio_chunks and hasattr(session, "set_hold_audio"):
+                session.set_hold_audio(self._hold_audio_chunks)
 
             async def on_audio(ulaw: bytes, ts: int) -> None:
                 await session.feed_audio(ulaw, ts)
@@ -308,7 +314,9 @@ class ClawOpsAgent:
                 telemetry["builtinTools"] = [t.value for t in self._builtin_tools] if self._builtin_tools else []
                 telemetry["recordingEnabled"] = self._recording
                 try:
-                    await self._control_ws.send({"event": "call.telemetry", "callId": call.call_id, "telemetry": telemetry})
+                    await self._control_ws.send(
+                        {"event": "call.telemetry", "callId": call.call_id, "telemetry": telemetry}
+                    )
                 except Exception:
                     pass
 
@@ -326,7 +334,9 @@ class ClawOpsAgent:
 
                 # Send call metrics (best-effort)
                 try:
-                    await self._control_ws.send({"event": "call.metrics", "callId": call.call_id, "metrics": call.metrics.to_dict()})
+                    await self._control_ws.send(
+                        {"event": "call.metrics", "callId": call.call_id, "metrics": call.metrics.to_dict()}
+                    )
                 except Exception:
                     pass
 

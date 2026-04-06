@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator
 
 from .._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
 from .._builtin_tools import BuiltinTool
+from .._hold_audio import HoldAudioPlayer
 from .._recorder import AudioRecorder
 from .._session import CallSession
 from .._tool import ToolRegistry
@@ -76,6 +77,11 @@ class PipelineSession:
         self._current_response_task: asyncio.Task[Any] | None = None
         self._sent_audio_chunks = 0
         self._pending_respond_task: asyncio.Task[Any] | None = None
+        self._hold_audio_chunks: list[bytes] | None = None
+
+    def set_hold_audio(self, chunks: list[bytes]) -> None:
+        """Tool 실행 중 재생할 hold audio 청크를 ���정한다."""
+        self._hold_audio_chunks = chunks
 
     def set_tool_registry(self, registry: ToolRegistry) -> None:
         """콜별로 fork된 ToolRegistry를 주입한다."""
@@ -96,11 +102,14 @@ class PipelineSession:
         return {
             "sessionType": "pipeline",
             "llm": {"provider": getattr(llm, "provider", None), "model": getattr(llm, "model", None)}
-                if hasattr(llm, "provider") else None,
+            if hasattr(llm, "provider")
+            else None,
             "stt": {"provider": getattr(stt, "provider", None), "model": getattr(stt, "model", None)}
-                if hasattr(stt, "provider") else None,
+            if hasattr(stt, "provider")
+            else None,
             "tts": {"provider": getattr(tts, "provider", None), "model": getattr(tts, "model", None)}
-                if hasattr(tts, "provider") else None,
+            if hasattr(tts, "provider")
+            else None,
             "voice": getattr(tts, "voice_id", None),
             "language": self._language,
             "greetingEnabled": self._greeting,
@@ -323,37 +332,43 @@ class PipelineSession:
             }
         )
 
-        for tc in tool_calls:
-            func_name = tc["function"]["name"]
-            call_id = tc["id"]
-            args = json.loads(tc["function"]["arguments"])
+        player = (
+            HoldAudioPlayer(self._call, self._hold_audio_chunks) if self._hold_audio_chunks and self._call else None
+        )
+        if player:
+            await player.start()
 
-            # Builtin tool 처리
-            if func_name in BUILTIN_TOOL_NAMES and self._call:
+        try:
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                call_id = tc["id"]
+                args = json.loads(tc["function"]["arguments"])
+
+                # Builtin tool 처리
+                if func_name in BUILTIN_TOOL_NAMES and self._call:
+                    if self._call:
+                        self._call.metrics.record_tool_call()
+                    result = await execute_builtin_tool(func_name, args, self._call)
+                    if result == "":  # hang_up
+                        return
+                    if result is not None:
+                        self._messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                        continue
+
+                # Custom / MCP tool 처리
                 if self._call:
                     self._call.metrics.record_tool_call()
-                result = await execute_builtin_tool(func_name, args, self._call)
-                if result == "":  # hang_up
-                    return
-                if result is not None:
-                    self._messages.append(
-                        {"role": "tool", "tool_call_id": call_id, "content": result}
-                    )
-                    continue
-
-            # Custom / MCP tool 처리
-            if self._call:
-                self._call.metrics.record_tool_call()
-            try:
-                result = await self._tools.call(func_name, args)
-            except Exception as e:
-                log.error(f"Tool call failed: {func_name}: {e}")
-                if self._call:
-                    self._call.metrics.record_tool_error(e)
-                result = f"Error: {e}"
-            self._messages.append(
-                {"role": "tool", "tool_call_id": call_id, "content": str(result)}
-            )
+                try:
+                    result = await self._tools.call(func_name, args)
+                except Exception as e:
+                    log.error(f"Tool call failed: {func_name}: {e}")
+                    if self._call:
+                        self._call.metrics.record_tool_error(e)
+                    result = f"Error: {e}"
+                self._messages.append({"role": "tool", "tool_call_id": call_id, "content": str(result)})
+        finally:
+            if player:
+                await player.stop()
 
         await self._respond()
 

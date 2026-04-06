@@ -23,6 +23,7 @@ except ImportError:
 
 from ..._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
 from ..._builtin_tools import BuiltinTool
+from ..._hold_audio import HoldAudioPlayer
 from ..._recorder import AudioRecorder
 from ..._session import CallSession
 from ..._tool import ToolRegistry
@@ -165,6 +166,11 @@ class GeminiRealtime:
         self._llm_span: Any | None = None
         self._audio_remainder: bytes = b""  # 160B 미만 잔여 ulaw 버퍼
         self._tool_call_in_progress: bool = False
+        self._hold_audio_chunks: list[bytes] | None = None
+
+    def set_hold_audio(self, chunks: list[bytes]) -> None:
+        """Tool 실행 중 재생할 hold audio 청크를 설정한다."""
+        self._hold_audio_chunks = chunks
 
     def set_tool_registry(self, registry: ToolRegistry) -> None:
         """콜별로 fork된 ToolRegistry를 주입한다."""
@@ -383,49 +389,59 @@ class GeminiRealtime:
         function_calls = getattr(tool_call, "function_calls", [])
         responses: list[types.FunctionResponse] = []
 
-        for fc in function_calls:
-            func_name = getattr(fc, "name", "")
-            fc_id = getattr(fc, "id", "")
-            args = getattr(fc, "args", {})
-            log.info(f"Tool call: {func_name}({args})")
+        player = (
+            HoldAudioPlayer(self._call, self._hold_audio_chunks) if self._hold_audio_chunks and self._call else None
+        )
+        if player:
+            await player.start()
 
-            # Builtin tool 처리
-            if func_name in BUILTIN_TOOL_NAMES and self._call:
+        try:
+            for fc in function_calls:
+                func_name = getattr(fc, "name", "")
+                fc_id = getattr(fc, "id", "")
+                args = getattr(fc, "args", {})
+                log.info(f"Tool call: {func_name}({args})")
+
+                # Builtin tool 처리
+                if func_name in BUILTIN_TOOL_NAMES and self._call:
+                    if self._call:
+                        self._call.metrics.record_tool_call()
+                    result = await execute_builtin_tool(func_name, args, self._call)
+                    if result == "":  # hang_up
+                        return
+                    if result is not None:
+                        responses.append(
+                            types.FunctionResponse(
+                                id=fc_id,
+                                name=func_name,
+                                response={"result": result},
+                            )
+                        )
+                    continue
+
+                # Custom / MCP tool 처리
                 if self._call:
                     self._call.metrics.record_tool_call()
-                result = await execute_builtin_tool(func_name, args, self._call)
-                if result == "":  # hang_up
-                    return
-                if result is not None:
-                    responses.append(
-                        types.FunctionResponse(
-                            id=fc_id,
-                            name=func_name,
-                            response={"result": result},
-                        )
+                source = "mcp" if func_name in self._tools._mcp_tools else "local"
+                with tool_call_span(func_name, source):
+                    try:
+                        result = await self._tools.call(func_name, args)
+                    except Exception as e:
+                        log.error(f"Tool call failed: {func_name}: {e}")
+                        if self._call:
+                            self._call.metrics.record_tool_error(e)
+                        result = f"Error: {e}"
+
+                responses.append(
+                    types.FunctionResponse(
+                        id=fc_id,
+                        name=func_name,
+                        response={"result": str(result)},
                     )
-                continue
-
-            # Custom / MCP tool 처리
-            if self._call:
-                self._call.metrics.record_tool_call()
-            source = "mcp" if func_name in self._tools._mcp_tools else "local"
-            with tool_call_span(func_name, source):
-                try:
-                    result = await self._tools.call(func_name, args)
-                except Exception as e:
-                    log.error(f"Tool call failed: {func_name}: {e}")
-                    if self._call:
-                        self._call.metrics.record_tool_error(e)
-                    result = f"Error: {e}"
-
-            responses.append(
-                types.FunctionResponse(
-                    id=fc_id,
-                    name=func_name,
-                    response={"result": str(result)},
                 )
-            )
+        finally:
+            if player:
+                await player.stop()
 
         if responses:
             await self._session.send_tool_response(
