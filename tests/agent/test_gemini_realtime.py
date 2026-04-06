@@ -44,12 +44,13 @@ async def test_gemini_sdk_start_connects():
     )
 
     mock_live_session = AsyncMock()
-    mock_live_session.receive = AsyncMock(
-        return_value=AsyncMock(
-            __aiter__=lambda self: self,
-            __anext__=AsyncMock(side_effect=StopAsyncIteration),
-        )
-    )
+
+    async def _empty_iter():
+        session._session = None  # receive loop 종료
+        if False:
+            yield  # async generator that yields nothing
+
+    mock_live_session.receive = _empty_iter
     mock_live_session.send_client_content = AsyncMock()
 
     mock_ctx = AsyncMock()
@@ -79,7 +80,7 @@ async def test_gemini_sdk_start_connects():
     # 핵심 config 확인
     assert config["response_modalities"] == ["AUDIO"]
     assert config["speech_config"]["voice_config"]["prebuilt_voice_config"]["voice_name"] == "Kore"
-    assert config["system_instruction"] == "Test prompt"
+    assert config["system_instruction"].parts[0].text == "Test prompt"
 
     # Transcription (Stage 2)
     assert "input_audio_transcription" in config
@@ -90,7 +91,7 @@ async def test_gemini_sdk_start_connects():
     assert "realtime_input_config" not in config
 
     # 인사 메시지 전송 확인
-    mock_live_session.send_client_content.assert_called_once()
+    mock_live_session.send_realtime_input.assert_called_once()
 
     # cleanup
     await session.stop()
