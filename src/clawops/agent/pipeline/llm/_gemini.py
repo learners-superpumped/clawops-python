@@ -1,4 +1,5 @@
 """Google Gemini 스트리밍 LLM."""
+
 from __future__ import annotations
 
 import json
@@ -19,7 +20,7 @@ class GeminiLLM:
         max_tokens: int = 4096,
     ) -> None:
         if api_key is None:
-            api_key = os.environ.get("GOOGLE_API_KEY", "")
+            api_key = os.environ.get("GOOGLE_API_KEY")
         self._api_key = api_key
         self._model = model
         self._temperature = temperature
@@ -47,7 +48,7 @@ class GeminiLLM:
                 "google-genai is required for GeminiLLM. Install it with: pip install clawops[gemini]"
             ) from None
 
-        client = genai.Client(api_key=self._api_key)
+        client = genai.Client(api_key=self._api_key) if self._api_key else genai.Client()
 
         # tool_call_id → function name 매핑 (tool result 변환용)
         tc_id_to_name: dict[str, str] = {}
@@ -64,10 +65,12 @@ class GeminiLLM:
             if role == "system":
                 system_instruction = msg["content"]
             elif role == "user":
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=msg["content"])],
-                ))
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=msg["content"])],
+                    )
+                )
             elif role == "assistant":
                 parts: list[types.Part] = []
                 if msg.get("content"):
@@ -75,22 +78,30 @@ class GeminiLLM:
                 if msg.get("tool_calls"):
                     for tc in msg["tool_calls"]:
                         func = tc["function"]
-                        args = json.loads(func["arguments"]) if isinstance(func["arguments"], str) else func["arguments"]
-                        parts.append(types.Part.from_function_call(
-                            name=func["name"],
-                            args=args,
-                        ))
+                        args = (
+                            json.loads(func["arguments"]) if isinstance(func["arguments"], str) else func["arguments"]
+                        )
+                        parts.append(
+                            types.Part.from_function_call(
+                                name=func["name"],
+                                args=args,
+                            )
+                        )
                 contents.append(types.Content(role="model", parts=parts))
             elif role == "tool":
                 # tool result → function response
                 func_name = tc_id_to_name.get(msg.get("tool_call_id", ""), "unknown")
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part.from_function_response(
-                        name=func_name,
-                        response={"result": msg["content"]},
-                    )],
-                ))
+                contents.append(
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_function_response(
+                                name=func_name,
+                                response={"result": msg["content"]},
+                            )
+                        ],
+                    )
+                )
 
         # 도구 스키마 변환
         gemini_tools = None
@@ -98,11 +109,13 @@ class GeminiLLM:
             declarations = []
             for tool in tools:
                 func = tool["function"]
-                declarations.append(types.FunctionDeclaration(
-                    name=func["name"],
-                    description=func.get("description", ""),
-                    parameters=func.get("parameters"),
-                ))
+                declarations.append(
+                    types.FunctionDeclaration(
+                        name=func["name"],
+                        description=func.get("description", ""),
+                        parameters=func.get("parameters"),
+                    )
+                )
             gemini_tools = [types.Tool(function_declarations=declarations)]
 
         config_kwargs: dict[str, Any] = {
@@ -117,10 +130,12 @@ class GeminiLLM:
 
         # Gemini API는 빈 contents를 허용하지 않음 (greeting 등 system만 있는 경우)
         if not contents:
-            contents.append(types.Content(
-                role="user",
-                parts=[types.Part.from_text(text="[통화 시작] 첫 인사를 해주세요.")],
-            ))
+            contents.append(
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text="[통화 시작] 첫 인사를 해주세요.")],
+                )
+            )
 
         tool_calls: list[dict[str, Any]] = []
 
@@ -138,13 +153,15 @@ class GeminiLLM:
                 elif part.function_call:
                     fc = part.function_call
                     idx = len(tool_calls)
-                    tool_calls.append({
-                        "id": f"call_{fc.name}_{idx}",
-                        "function": {
-                            "name": fc.name,
-                            "arguments": json.dumps(dict(fc.args) if fc.args else {}),
-                        },
-                    })
+                    tool_calls.append(
+                        {
+                            "id": f"call_{fc.name}_{idx}",
+                            "function": {
+                                "name": fc.name,
+                                "arguments": json.dumps(dict(fc.args) if fc.args else {}),
+                            },
+                        }
+                    )
 
         if tool_calls:
             result = {

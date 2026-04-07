@@ -121,7 +121,7 @@ llm = GeminiLLM(
 )
 ```
 
-환경변수: `GOOGLE_API_KEY`
+환경변수: `GOOGLE_API_KEY` (Google AI) 또는 Vertex AI 환경변수 (`GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`)
 
 **특징:**
 

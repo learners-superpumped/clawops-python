@@ -145,7 +145,7 @@ class GeminiRealtime:
                 "google-genai is required for GeminiRealtime. Install it with: pip install clawops[gemini]"
             )
         if api_key is None:
-            api_key = os.environ.get("GOOGLE_API_KEY", "")
+            api_key = os.environ.get("GOOGLE_API_KEY")
         self._api_key = api_key
         self._system_prompt = system_prompt
         self._model = model
@@ -156,7 +156,7 @@ class GeminiRealtime:
         self._builtin_tools: set[BuiltinTool] | None = None
         self._recorder = recorder
 
-        self._client = genai.Client(api_key=api_key)
+        self._client = genai.Client(api_key=api_key) if api_key else genai.Client()
         self._live_ctx: Any | None = None  # async context manager
         self._session: Any | None = None  # AsyncLiveSession
         self._call: CallSession | None = None
