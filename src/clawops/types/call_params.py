@@ -171,6 +171,15 @@ class CallListParams(TypedDict, total=False):
     status: Literal["queued", "ringing", "in-progress", "completed", "failed"]
     """통화 상태로 필터링."""
 
+    from_: Union[str, list[str]]
+    """발신번호로 필터링. 리스트 시 IN 조건."""
+
+    to: Union[str, list[str]]
+    """수신번호로 필터링. 리스트 시 IN 조건."""
+
+    number: Union[str, list[str]]
+    """관여 번호로 필터링 (from OR to 매칭). 리스트 시 IN 조건."""
+
     page: int
     """페이지 번호 (0부터 시작)."""
 

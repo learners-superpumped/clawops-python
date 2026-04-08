@@ -60,32 +60,46 @@ class Calls(SyncAPIResource):
         """
         ai_body = None
         if ai:
-            ai_body = strip_not_given({
-                "Provider": ai.get("provider"),
-                "Model": ai.get("model"),
-                "ApiKey": ai.get("api_key"),
-                "Voice": ai.get("voice"),
-                "Language": ai.get("language"),
-                "Messages": ai.get("messages"),
-                "Tools": ai.get("tools"),
-                "Greeting": ai.get("greeting"),
-                "TurnDetection": ai.get("turn_detection"),
-            })
-        body = strip_not_given({
-            "To": to, "From": from_, "Url": url, "AI": ai_body,
-            "StatusCallback": status_callback,
-            "StatusCallbackEvent": status_callback_event,
-            "Timeout": timeout,
-        })
+            ai_body = strip_not_given(
+                {
+                    "Provider": ai.get("provider"),
+                    "Model": ai.get("model"),
+                    "ApiKey": ai.get("api_key"),
+                    "Voice": ai.get("voice"),
+                    "Language": ai.get("language"),
+                    "Messages": ai.get("messages"),
+                    "Tools": ai.get("tools"),
+                    "Greeting": ai.get("greeting"),
+                    "TurnDetection": ai.get("turn_detection"),
+                }
+            )
+        body = strip_not_given(
+            {
+                "To": to,
+                "From": from_,
+                "Url": url,
+                "AI": ai_body,
+                "StatusCallback": status_callback,
+                "StatusCallbackEvent": status_callback_event,
+                "Timeout": timeout,
+            }
+        )
         return self._client._post(
-            f"{self._base_path}/calls", body=body, cast_to=Call,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout_,
+            f"{self._base_path}/calls",
+            body=body,
+            cast_to=Call,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout_,
         )
 
     def list(
         self,
         *,
         status: Literal["queued", "ringing", "in-progress", "completed", "failed"] | None = None,
+        from_: str | list[str] | None = None,
+        to: str | list[str] | None = None,
+        number: str | list[str] | None = None,
         page: int | None = None,
         page_size: int | None = None,
         extra_headers: dict[str, str] | None = None,
@@ -99,6 +113,9 @@ class Calls(SyncAPIResource):
 
         Args:
             status: 통화 상태로 필터링. queued, ringing, in-progress, completed, failed.
+            from_: 발신번호로 필터링. 리스트 시 IN 조건.
+            to: 수신번호로 필터링. 리스트 시 IN 조건.
+            number: 관여 번호로 필터링 (from OR to 매칭). 리스트 시 IN 조건.
             page: 페이지 번호 (0부터 시작, 기본값 0).
             page_size: 페이지당 항목 수 (기본 20, 최대 100).
             extra_headers: 추가 HTTP 헤더.
@@ -113,11 +130,17 @@ class Calls(SyncAPIResource):
             AuthenticationError: 유효하지 않은 API 키.
             PermissionDeniedError: accountId 불일치.
         """
-        query = strip_not_given({"status": status, "page": page, "pageSize": page_size})
+        query = strip_not_given(
+            {"status": status, "from": from_, "to": to, "number": number, "page": page, "pageSize": page_size}
+        )
         path = f"{self._base_path}/calls"
         result = self._client._get(
-            path, cast_to=SyncPage[Call], query=query if query else None,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            path,
+            cast_to=SyncPage[Call],
+            query=query if query else None,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
         )
         result.data = [Call.model_validate(item) if isinstance(item, dict) else item for item in result.data]
         result._set_client(client=self._client, path=path, cast_to=Call, query=query)
@@ -148,8 +171,11 @@ class Calls(SyncAPIResource):
             PermissionDeniedError: accountId 불일치.
         """
         return self._client._get(
-            f"{self._base_path}/calls/{call_id}", cast_to=Call,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            f"{self._base_path}/calls/{call_id}",
+            cast_to=Call,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
         )
 
     def update(
@@ -180,8 +206,12 @@ class Calls(SyncAPIResource):
             NotFoundError: 해당 통화를 찾을 수 없음.
         """
         return self._client._post(
-            f"{self._base_path}/calls/{call_id}", body={"Status": status}, cast_to=CallControlResponse,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            f"{self._base_path}/calls/{call_id}",
+            body={"Status": status},
+            cast_to=CallControlResponse,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
         )
 
 
@@ -205,56 +235,101 @@ class AsyncCalls(AsyncAPIResource):
         """발신 전화를 비동기로 생성합니다. 자세한 내용은 Calls.create를 참고하세요."""
         ai_body = None
         if ai:
-            ai_body = strip_not_given({
-                "Provider": ai.get("provider"),
-                "Model": ai.get("model"),
-                "ApiKey": ai.get("api_key"),
-                "Voice": ai.get("voice"),
-                "Language": ai.get("language"),
-                "Messages": ai.get("messages"),
-                "Tools": ai.get("tools"),
-                "Greeting": ai.get("greeting"),
-                "TurnDetection": ai.get("turn_detection"),
-            })
-        body = strip_not_given({
-            "To": to, "From": from_, "Url": url, "AI": ai_body,
-            "StatusCallback": status_callback,
-            "StatusCallbackEvent": status_callback_event,
-            "Timeout": timeout,
-        })
+            ai_body = strip_not_given(
+                {
+                    "Provider": ai.get("provider"),
+                    "Model": ai.get("model"),
+                    "ApiKey": ai.get("api_key"),
+                    "Voice": ai.get("voice"),
+                    "Language": ai.get("language"),
+                    "Messages": ai.get("messages"),
+                    "Tools": ai.get("tools"),
+                    "Greeting": ai.get("greeting"),
+                    "TurnDetection": ai.get("turn_detection"),
+                }
+            )
+        body = strip_not_given(
+            {
+                "To": to,
+                "From": from_,
+                "Url": url,
+                "AI": ai_body,
+                "StatusCallback": status_callback,
+                "StatusCallbackEvent": status_callback_event,
+                "Timeout": timeout,
+            }
+        )
         return await self._client._post(
-            f"{self._base_path}/calls", body=body, cast_to=Call,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout_,
+            f"{self._base_path}/calls",
+            body=body,
+            cast_to=Call,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout_,
         )
 
-    async def list(self, *, status: Literal["queued", "ringing", "in-progress", "completed", "failed"] | None = None,
-                   page: int | None = None, page_size: int | None = None,
-                   extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
-                   timeout: float | None = None) -> AsyncPage[Call]:
+    async def list(
+        self,
+        *,
+        status: Literal["queued", "ringing", "in-progress", "completed", "failed"] | None = None,
+        from_: str | list[str] | None = None,
+        to: str | list[str] | None = None,
+        number: str | list[str] | None = None,
+        page: int | None = None,
+        page_size: int | None = None,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> AsyncPage[Call]:
         """통화 목록을 비동기로 조회합니다."""
-        query = strip_not_given({"status": status, "page": page, "pageSize": page_size})
+        query = strip_not_given(
+            {"status": status, "from": from_, "to": to, "number": number, "page": page, "pageSize": page_size}
+        )
         path = f"{self._base_path}/calls"
         result = await self._client._get(
-            path, cast_to=AsyncPage[Call], query=query if query else None,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            path,
+            cast_to=AsyncPage[Call],
+            query=query if query else None,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
         )
         result.data = [Call.model_validate(item) if isinstance(item, dict) else item for item in result.data]
         result._set_client(client=self._client, path=path, cast_to=Call, query=query)
         return result
 
-    async def get(self, call_id: str, *, extra_headers: dict[str, str] | None = None,
-                  extra_query: dict[str, object] | None = None, timeout: float | None = None) -> Call:
+    async def get(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> Call:
         """특정 통화를 비동기로 조회합니다."""
         return await self._client._get(
-            f"{self._base_path}/calls/{call_id}", cast_to=Call,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            f"{self._base_path}/calls/{call_id}",
+            cast_to=Call,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
         )
 
-    async def update(self, call_id: str, *, status: Literal["completed"] = "completed",
-                     extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
-                     timeout: float | None = None) -> CallControlResponse:
+    async def update(
+        self,
+        call_id: str,
+        *,
+        status: Literal["completed"] = "completed",
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> CallControlResponse:
         """진행 중인 통화를 비동기로 종료합니다."""
         return await self._client._post(
-            f"{self._base_path}/calls/{call_id}", body={"Status": status}, cast_to=CallControlResponse,
-            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+            f"{self._base_path}/calls/{call_id}",
+            body={"Status": status},
+            cast_to=CallControlResponse,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
         )
