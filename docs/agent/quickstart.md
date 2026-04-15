@@ -104,6 +104,39 @@ agent = ClawOpsAgent(
 
 > **Note:** 기본 모델이 `gemini-3.1-flash-live-preview`로 업데이트되었습니다. 이전 `gemini-2.5-flash-native-audio-preview-12-2025` 모델은 더 이상 지원되지 않습니다.
 
+#### VAD (Voice Activity Detection) 설정
+
+Gemini Live API의 음성 감지 세부 설정을 `realtime_input_config`로 전달할 수 있습니다.
+구조는 [google-genai SDK의 `RealtimeInputConfig`](https://ai.google.dev/gemini-api/docs/live-api/capabilities#configure-automatic-vad)를 그대로 따릅니다.
+
+```python
+from clawops.agent import ClawOpsAgent, GeminiRealtime
+
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=GeminiRealtime(
+        system_prompt="상담원입니다.",
+        voice="Kore",
+        language="ko",
+        realtime_input_config={
+            "automatic_activity_detection": {
+                "start_of_speech_sensitivity": "START_SENSITIVITY_HIGH",
+                "end_of_speech_sensitivity": "END_SENSITIVITY_HIGH",
+                "prefix_padding_ms": 20,
+                "silence_duration_ms": 100,
+            },
+            "activity_handling": "NO_INTERRUPTION",
+        },
+        input_audio_transcription={},
+    ),
+)
+```
+
+| 파라미터 | 타입 | 설명 |
+| --- | --- | --- |
+| `realtime_input_config` | `dict` | Gemini VAD 설정. `automatic_activity_detection`, `activity_handling`, `turn_coverage` 등을 포함. |
+| `input_audio_transcription` | `dict` | 입력 오디오 전사 설정. 기본값: `{}` (전사 활성화). `None`이면 비활성화. |
+
 ### 음성 옵션
 
 | 음성     | 특징                         |

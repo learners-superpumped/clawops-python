@@ -139,6 +139,8 @@ class GeminiRealtime:
         greeting: bool = True,
         tool_registry: ToolRegistry | None = None,
         recorder: AudioRecorder | None = None,
+        realtime_input_config: dict[str, Any] | None = None,
+        input_audio_transcription: dict[str, Any] | None = None,
     ) -> None:
         if not _HAS_GENAI:
             raise ImportError(
@@ -155,6 +157,8 @@ class GeminiRealtime:
         self._tools = tool_registry or ToolRegistry()
         self._builtin_tools: set[BuiltinTool] | None = None
         self._recorder = recorder
+        self._realtime_input_config = realtime_input_config
+        self._input_audio_transcription = input_audio_transcription
 
         self._client = genai.Client(api_key=api_key) if api_key else genai.Client()
         self._live_ctx: Any | None = None  # async context manager
@@ -215,9 +219,14 @@ class GeminiRealtime:
                     "prebuilt_voice_config": {"voice_name": self._voice},
                 },
             },
-            "input_audio_transcription": {},
+            "input_audio_transcription": self._input_audio_transcription
+            if self._input_audio_transcription is not None
+            else {},
             "output_audio_transcription": {},
         }
+
+        if self._realtime_input_config:
+            config["realtime_input_config"] = self._realtime_input_config
 
         if self._system_prompt:
             config["system_instruction"] = types.Content(
@@ -227,7 +236,7 @@ class GeminiRealtime:
         if tool_schemas:
             config["tools"] = [{"function_declarations": tool_schemas}]
 
-        log.debug(f"Gemini SDK config: model={self._model}, voice={self._voice}")
+        log.debug("Gemini SDK final config: %s", config)
         log.debug(f"Gemini SDK tool count: {len(tool_schemas)}")
 
         # SDK가 setup 메시지를 자동으로 처리

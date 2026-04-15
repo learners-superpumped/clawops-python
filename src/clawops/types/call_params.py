@@ -125,6 +125,12 @@ class GeminiAIConfigParam(TypedDict, total=False):
     greeting: Annotated[bool, PropertyInfo(alias="Greeting")]
     """AI가 먼저 인사할지 여부 (기본값: ``True``)."""
 
+    realtime_input_config: Annotated[dict, PropertyInfo(alias="RealtimeInputConfig")]
+    """Gemini VAD 설정. google-genai SDK의 ``RealtimeInputConfig`` 구조 그대로 전달."""
+
+    input_audio_transcription: Annotated[dict, PropertyInfo(alias="InputAudioTranscription")]
+    """입력 오디오 전사 설정. google-genai SDK의 ``AudioTranscriptionConfig`` 구조 그대로 전달."""
+
 
 AIConfigParam = Union[OpenAIAIConfigParam, GeminiAIConfigParam]
 """AI Completion 모드 설정. ``provider`` 값에 따라 ``model``\\과 ``voice``\\가 달라집니다."""

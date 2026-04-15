@@ -71,6 +71,8 @@ class Calls(SyncAPIResource):
                     "Tools": ai.get("tools"),
                     "Greeting": ai.get("greeting"),
                     "TurnDetection": ai.get("turn_detection"),
+                    "RealtimeInputConfig": ai.get("realtime_input_config"),
+                    "InputAudioTranscription": ai.get("input_audio_transcription"),
                 }
             )
         body = strip_not_given(
@@ -246,6 +248,8 @@ class AsyncCalls(AsyncAPIResource):
                     "Tools": ai.get("tools"),
                     "Greeting": ai.get("greeting"),
                     "TurnDetection": ai.get("turn_detection"),
+                    "RealtimeInputConfig": ai.get("realtime_input_config"),
+                    "InputAudioTranscription": ai.get("input_audio_transcription"),
                 }
             )
         body = strip_not_given(
