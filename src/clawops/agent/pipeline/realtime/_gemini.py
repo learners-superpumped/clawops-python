@@ -140,7 +140,6 @@ class GeminiRealtime:
         tool_registry: ToolRegistry | None = None,
         recorder: AudioRecorder | None = None,
         realtime_input_config: dict[str, Any] | None = None,
-        input_audio_transcription: dict[str, Any] | None = None,
     ) -> None:
         if not _HAS_GENAI:
             raise ImportError(
@@ -158,7 +157,6 @@ class GeminiRealtime:
         self._builtin_tools: set[BuiltinTool] | None = None
         self._recorder = recorder
         self._realtime_input_config = realtime_input_config
-        self._input_audio_transcription = input_audio_transcription
 
         self._client = genai.Client(api_key=api_key) if api_key else genai.Client()
         self._live_ctx: Any | None = None  # async context manager
@@ -219,9 +217,7 @@ class GeminiRealtime:
                     "prebuilt_voice_config": {"voice_name": self._voice},
                 },
             },
-            "input_audio_transcription": self._input_audio_transcription
-            if self._input_audio_transcription is not None
-            else {},
+            "input_audio_transcription": {},
             "output_audio_transcription": {},
         }
 

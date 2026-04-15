@@ -127,7 +127,6 @@ agent = ClawOpsAgent(
             },
             "activity_handling": "NO_INTERRUPTION",
         },
-        input_audio_transcription={},
     ),
 )
 ```
@@ -135,7 +134,6 @@ agent = ClawOpsAgent(
 | 파라미터 | 타입 | 설명 |
 | --- | --- | --- |
 | `realtime_input_config` | `dict` | Gemini VAD 설정. `automatic_activity_detection`, `activity_handling`, `turn_coverage` 등을 포함. |
-| `input_audio_transcription` | `dict` | 입력 오디오 전사 설정. 기본값: `{}` (전사 활성화). `None`이면 비활성화. |
 
 ### 음성 옵션
 
