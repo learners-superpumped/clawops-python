@@ -6,6 +6,7 @@ from .._resource import AsyncAPIResource, SyncAPIResource
 from .._utils import strip_not_given
 from ..pagination import AsyncPage, SyncPage
 from ..types.call import Call, CallControlResponse
+from ..types.transcript import TranscriptRequestAccepted, TranscriptStatus
 
 
 class Calls(SyncAPIResource):
@@ -179,6 +180,73 @@ class Calls(SyncAPIResource):
             timeout=timeout,
         )
 
+    def get_transcript(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> TranscriptStatus:
+        """통화 전사 상태를 조회합니다.
+
+        완료된 경우 segment 배열까지 한 번에 반환합니다.
+
+        Args:
+            call_id: 통화 ID.
+
+        Returns:
+            TranscriptStatus — status 필드로 completed / pending / failed /
+            not_requested 구분. completed 일 때 segments 채워짐.
+
+        Raises:
+            NotFoundError: 통화가 존재하지 않음.
+            PermissionDeniedError: accountId 불일치.
+        """
+        return self._client._get(
+            f"{self._base_path}/calls/{call_id}/transcript",
+            cast_to=TranscriptStatus,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
+        )
+
+    def request_transcript(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> TranscriptRequestAccepted:
+        """특정 통화 1 건에 대해 전사를 명시 요청합니다.
+
+        조직 설정 "통화 받아쓰기" 가 꺼져 있어도 해당 통화만 전사됩니다.
+        재실행 금지 — 이미 요청된 통화는 ConflictError 발생. 시스템 레벨
+        트리거 실패(stage=trigger) 만 재시도 가능합니다. 전사된 오디오
+        길이만큼 사용량 기반으로 과금됩니다.
+
+        Args:
+            call_id: 통화 ID.
+
+        Returns:
+            TranscriptRequestAccepted — {"status": "pending", "call_id": ...}.
+
+        Raises:
+            BadRequestError: 녹음 없음 (400).
+            NotFoundError: 통화 없음 (404).
+            PermissionDeniedError: accountId 불일치 (403).
+            ConflictError: 이미 요청됨 — completed / pending / failed (409).
+        """
+        return self._client._post(
+            f"{self._base_path}/calls/{call_id}/transcript",
+            body=None,
+            cast_to=TranscriptRequestAccepted,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
+        )
+
     def update(
         self,
         call_id: str,
@@ -312,6 +380,42 @@ class AsyncCalls(AsyncAPIResource):
         return await self._client._get(
             f"{self._base_path}/calls/{call_id}",
             cast_to=Call,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
+        )
+
+    async def get_transcript(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> TranscriptStatus:
+        """통화 전사 상태를 비동기 조회. 자세한 내용은 Calls.get_transcript 참고."""
+        return await self._client._get(
+            f"{self._base_path}/calls/{call_id}/transcript",
+            cast_to=TranscriptStatus,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
+        )
+
+    async def request_transcript(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> TranscriptRequestAccepted:
+        """특정 통화 1 건에 대해 전사를 비동기 명시 요청.
+        자세한 내용은 Calls.request_transcript 참고."""
+        return await self._client._post(
+            f"{self._base_path}/calls/{call_id}/transcript",
+            body=None,
+            cast_to=TranscriptRequestAccepted,
             extra_headers=extra_headers,
             extra_query=extra_query,
             timeout=timeout,

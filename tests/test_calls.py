@@ -6,6 +6,7 @@ import respx
 from clawops._base_client import SyncAPIClient
 from clawops.resources.calls import Calls
 from clawops.types.call import Call, CallControlResponse
+from clawops.types.transcript import TranscriptRequestAccepted, TranscriptStatus
 
 BASE = "https://api.claw-ops.com"
 ACCOUNT = "AC1a2b3c4d"
@@ -83,3 +84,68 @@ class TestCallsUpdate:
         result = calls.update(cid, status="completed")
         assert isinstance(result, CallControlResponse)
         assert result.status == "completed"
+
+
+class TestCallsTranscript:
+    CID = "CAd6d8debfef62953acc35e37f3068745a"
+
+    @respx.mock
+    def test_get_transcript_completed(self, calls):
+        respx.get(f"{BASE}{CALLS_PATH}/{self.CID}/transcript").mock(
+            return_value=httpx.Response(200, json={
+                "status": "completed",
+                "callId": self.CID,
+                "segmentCount": 2,
+                "segments": [
+                    {"speaker": "AGENT", "start": 0.0, "end": 1.2, "text": "안녕하세요."},
+                    {"speaker": "CUSTOMER", "start": 1.5, "end": 2.8, "text": "네."},
+                ],
+            })
+        )
+        r = calls.get_transcript(self.CID)
+        assert isinstance(r, TranscriptStatus)
+        assert r.status == "completed"
+        assert r.segment_count == 2
+        assert r.segments and r.segments[0].speaker == "AGENT"
+
+    @respx.mock
+    def test_get_transcript_pending(self, calls):
+        respx.get(f"{BASE}{CALLS_PATH}/{self.CID}/transcript").mock(
+            return_value=httpx.Response(200, json={
+                "status": "pending",
+                "startedAt": "2026-04-23T08:33:00Z",
+            })
+        )
+        r = calls.get_transcript(self.CID)
+        assert r.status == "pending"
+        assert r.started_at is not None
+
+    @respx.mock
+    def test_get_transcript_failed(self, calls):
+        respx.get(f"{BASE}{CALLS_PATH}/{self.CID}/transcript").mock(
+            return_value=httpx.Response(200, json={
+                "status": "failed", "stage": "runtime", "error": "boom",
+            })
+        )
+        r = calls.get_transcript(self.CID)
+        assert r.status == "failed"
+        assert r.stage == "runtime"
+        assert r.error == "boom"
+
+    @respx.mock
+    def test_get_transcript_not_requested(self, calls):
+        respx.get(f"{BASE}{CALLS_PATH}/{self.CID}/transcript").mock(
+            return_value=httpx.Response(200, json={"status": "not_requested"})
+        )
+        r = calls.get_transcript(self.CID)
+        assert r.status == "not_requested"
+
+    @respx.mock
+    def test_request_transcript_accepted(self, calls):
+        respx.post(f"{BASE}{CALLS_PATH}/{self.CID}/transcript").mock(
+            return_value=httpx.Response(202, json={"status": "pending", "callId": self.CID})
+        )
+        r = calls.request_transcript(self.CID)
+        assert isinstance(r, TranscriptRequestAccepted)
+        assert r.status == "pending"
+        assert r.call_id == self.CID
