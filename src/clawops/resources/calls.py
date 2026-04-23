@@ -240,7 +240,6 @@ class Calls(SyncAPIResource):
         """
         return self._client._post(
             f"{self._base_path}/calls/{call_id}/transcript",
-            body=None,
             cast_to=TranscriptRequestAccepted,
             extra_headers=extra_headers,
             extra_query=extra_query,
@@ -414,7 +413,6 @@ class AsyncCalls(AsyncAPIResource):
         자세한 내용은 Calls.request_transcript 참고."""
         return await self._client._post(
             f"{self._base_path}/calls/{call_id}/transcript",
-            body=None,
             cast_to=TranscriptRequestAccepted,
             extra_headers=extra_headers,
             extra_query=extra_query,
