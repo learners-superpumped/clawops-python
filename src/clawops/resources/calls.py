@@ -6,6 +6,7 @@ from .._resource import AsyncAPIResource, SyncAPIResource
 from .._utils import strip_not_given
 from ..pagination import AsyncPage, SyncPage
 from ..types.call import Call, CallControlResponse
+from ..types.summary import SummaryStatus
 from ..types.transcript import TranscriptRequestAccepted, TranscriptStatus
 
 
@@ -246,6 +247,37 @@ class Calls(SyncAPIResource):
             timeout=timeout,
         )
 
+    def get_summary(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> SummaryStatus:
+        """통화 요약 상태를 조회합니다.
+
+        transcript 가 완료된 통화에 대해 자동 생성된 LLM 구조화 요약 결과를 반환합니다.
+
+        Args:
+            call_id: 통화 ID.
+
+        Returns:
+            SummaryStatus — status 필드로 completed / pending / failed /
+            not_requested 구분. completed 일 때 result_json 채워짐.
+
+        Raises:
+            NotFoundError: 통화가 존재하지 않음.
+            PermissionDeniedError: accountId 불일치.
+        """
+        return self._client._get(
+            f"{self._base_path}/calls/{call_id}/summary",
+            cast_to=SummaryStatus,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
+        )
+
     def update(
         self,
         call_id: str,
@@ -414,6 +446,23 @@ class AsyncCalls(AsyncAPIResource):
         return await self._client._post(
             f"{self._base_path}/calls/{call_id}/transcript",
             cast_to=TranscriptRequestAccepted,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            timeout=timeout,
+        )
+
+    async def get_summary(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> SummaryStatus:
+        """통화 요약 상태를 비동기 조회. 자세한 내용은 Calls.get_summary 참고."""
+        return await self._client._get(
+            f"{self._base_path}/calls/{call_id}/summary",
+            cast_to=SummaryStatus,
             extra_headers=extra_headers,
             extra_query=extra_query,
             timeout=timeout,

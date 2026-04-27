@@ -195,6 +195,11 @@ elif state.status == "not_requested":
     # 조직 설정 off 거나 아직 요청 안 된 상태 — 명시 요청 (사용량 과금)
     client.calls.request_transcript("CAabcdef1234567890")
 
+# 통화 요약 상태 조회 (completed 시 result_json 까지 inline)
+summary = client.calls.get_summary("CAabcdef1234567890")
+if summary.status == "completed":
+    print(summary.result_json)  # {"coreSummary": ..., "decisions": [...], ...}
+
 # AI Completion 모드 — AI가 직접 통화를 처리
 ai_call = client.calls.create(
     to="01012345678",
