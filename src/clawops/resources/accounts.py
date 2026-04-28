@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .assignment_links import AssignmentLinks, AsyncAssignmentLinks
 from .calls import AsyncCalls, Calls
 from .messages import AsyncMessages, Messages
 from .numbers import AsyncNumbers, Numbers
@@ -41,6 +42,10 @@ class AccountContext:
     def webhook_logs(self) -> WebhookLogs:
         return WebhookLogs(client=self._client, account_id=self._account_id)
 
+    @property
+    def assignment_links(self) -> AssignmentLinks:
+        return AssignmentLinks(client=self._client, account_id=self._account_id)
+
 
 class AsyncAccountContext:
     """비동기 계정 컨텍스트."""
@@ -64,3 +69,7 @@ class AsyncAccountContext:
     @property
     def webhook_logs(self) -> AsyncWebhookLogs:
         return AsyncWebhookLogs(client=self._client, account_id=self._account_id)
+
+    @property
+    def assignment_links(self) -> AsyncAssignmentLinks:
+        return AsyncAssignmentLinks(client=self._client, account_id=self._account_id)

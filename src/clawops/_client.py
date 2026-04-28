@@ -11,6 +11,7 @@ from .resources.accounts import AccountContext, AsyncAccountContext
 from .resources.calls import AsyncCalls, Calls
 from .resources.messages import AsyncMessages, Messages
 from .resources.numbers import AsyncNumbers, Numbers
+from .resources.assignment_links import AssignmentLinks, AsyncAssignmentLinks
 from .resources.webhook_logs import AsyncWebhookLogs, WebhookLogs
 from .webhooks import Webhooks
 
@@ -96,6 +97,11 @@ class ClawOps(SyncAPIClient):
         return WebhookLogs(client=self, account_id=self._default_account_id)
 
     @property
+    def assignment_links(self) -> AssignmentLinks:
+        """관리번호(External Assignment) 발급 링크 리소스에 접근합니다."""
+        return AssignmentLinks(client=self, account_id=self._default_account_id)
+
+    @property
     def webhooks(self) -> Webhooks:
         """Webhook 서명 검증 유틸리티."""
         return Webhooks()
@@ -173,6 +179,11 @@ class AsyncClawOps(AsyncAPIClient):
     def webhook_logs(self) -> AsyncWebhookLogs:
         """Webhook 발송 로그 리소스에 접근합니다."""
         return AsyncWebhookLogs(client=self, account_id=self._default_account_id)
+
+    @property
+    def assignment_links(self) -> AsyncAssignmentLinks:
+        """관리번호 발급 링크 리소스에 접근합니다."""
+        return AsyncAssignmentLinks(client=self, account_id=self._default_account_id)
 
     @property
     def webhooks(self) -> Webhooks:
