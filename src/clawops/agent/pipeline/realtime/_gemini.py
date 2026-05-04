@@ -373,12 +373,8 @@ class GeminiRealtime:
         if not self._call:
             return
 
-        pcm24k = audio_data
-        if self._recorder:
-            self._recorder.write_outbound(resample_pcm16(pcm24k, from_rate=24000, to_rate=8000))
-
         # PCM16 24kHz → PCM16 8kHz → ulaw
-        pcm8k = resample_pcm16(pcm24k, from_rate=24000, to_rate=8000)
+        pcm8k = resample_pcm16(audio_data, from_rate=24000, to_rate=8000)
         ulaw = pcm16_to_ulaw(pcm8k)
 
         # 160B 프레임 정렬

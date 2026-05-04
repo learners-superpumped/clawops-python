@@ -61,6 +61,46 @@ def test_write_outbound_only(tmp_path: Path):
         assert wf.getnframes() >= 80
 
 
+def test_outbound_media_ts_gap_preserved(tmp_path: Path):
+    rec = AudioRecorder(str(tmp_path), "call-out-ts-gap")
+    rec.start()
+    chunk = b"\x02\x00" * 160  # 20ms
+
+    rec.write_inbound(b"\x01\x00" * 160, media_ts_ms=0)
+    rec.write_outbound(chunk, media_ts_ms=0)
+    rec.write_inbound(b"\x01\x00" * 160, media_ts_ms=500)
+    rec.write_outbound(chunk, media_ts_ms=500)
+    rec.stop()
+
+    call_dir = tmp_path / "call-out-ts-gap"
+    with open(str(call_dir / "out.wav"), "rb") as f:
+        f.seek(44)
+        data = f.read()
+
+    expected_second_pos = 500 * 16
+    assert data[:320] == chunk
+    assert data[320:expected_second_pos] == b"\x00" * (expected_second_pos - 320)
+    assert data[expected_second_pos : expected_second_pos + 320] == chunk
+
+
+def test_outbound_cursor_does_not_collapse_same_timestamp(tmp_path: Path):
+    rec = AudioRecorder(str(tmp_path), "call-out-cursor")
+    rec.start()
+    chunk = b"\x02\x00" * 160
+
+    rec.write_inbound(b"\x01\x00" * 160, media_ts_ms=0)
+    rec.write_outbound(chunk, media_ts_ms=0)
+    rec.write_outbound(chunk, media_ts_ms=0)
+    rec.stop()
+
+    call_dir = tmp_path / "call-out-cursor"
+    with open(str(call_dir / "out.wav"), "rb") as f:
+        f.seek(44)
+        data = f.read(640)
+
+    assert data == chunk * 2
+
+
 @patch("time.monotonic")
 def test_stop_equalizes_track_lengths(mock_mono, tmp_path: Path):
     mock_mono.return_value = 0.0

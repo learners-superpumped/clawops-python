@@ -278,13 +278,6 @@ class PipelineSession:
                 if not self._running or not self._call:
                     log.warning("TTS audio received but session stopped")
                     break
-                if self._recorder:
-                    pcm16_8k = (
-                        resample_pcm16(audio, from_rate=tts_sample_rate, to_rate=8000)
-                        if tts_sample_rate != 8000
-                        else audio
-                    )
-                    self._recorder.write_outbound(pcm16_8k)
                 pcm8k = resample_pcm16(audio, from_rate=tts_sample_rate, to_rate=8000)
                 ulaw = pcm16_to_ulaw(pcm8k)
                 for off in range(0, len(ulaw), 160):

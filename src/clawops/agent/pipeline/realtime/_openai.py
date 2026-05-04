@@ -28,7 +28,6 @@ except ImportError:
     AsyncRealtimeConnection = None  # type: ignore[assignment,misc]
     _HAS_OPENAI = False
 
-from ..._audio import ulaw_to_pcm16
 from ..._builtin_tools import BuiltinTool
 from ..._hold_audio import HoldAudioPlayer
 from ..._recorder import AudioRecorder
@@ -261,8 +260,6 @@ class OpenAIRealtime:
                     f"totalChunks={pb.sent_chunks}"
                 )
                 self._diag_last_delta_time = now
-            if self._recorder:
-                self._recorder.write_outbound(ulaw_to_pcm16(ulaw))
             ulaw = pb.audio_remainder + ulaw
             chunk_size = 160
             full_end = (len(ulaw) // chunk_size) * chunk_size

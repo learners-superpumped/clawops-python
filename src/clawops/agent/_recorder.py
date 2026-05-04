@@ -1,6 +1,6 @@
 """3-file call recording: in.wav, out.wav, mix.wav.
 
-Inbound는 media timestamp 기반, outbound는 wall-clock 기반으로 녹음한다.
+Inbound/outbound 모두 media timestamp 기반 timeline에 기록한다.
 세 파일 모두 동일한 길이로 유지된다.
 recordings/{call_id}/in.wav   — 상대방 음성 (PCM16 8kHz mono)
 recordings/{call_id}/out.wav  — AI 음성 (PCM16 8kHz mono)
@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import os
 import struct
-import time
 
 log = logging.getLogger(__name__)
 
@@ -58,8 +57,8 @@ def _mix_samples(a: bytes, b: bytes) -> bytes:
 class AudioRecorder:
     """3-file WAV recorder.
 
-    Inbound: media timestamp 기반 위치 계산 (정확한 녹음).
-    Outbound: wall-clock 기반 위치 계산.
+    Inbound: media timestamp 기반 위치 계산.
+    Outbound: media timestamp 기반 시작 위치 + audio duration cursor로 위치 계산.
     """
 
     def __init__(self, path: str, call_id: str) -> None:
@@ -70,9 +69,9 @@ class AudioRecorder:
         self._in_written = 0
         self._out_written = 0
         self._mix_written = 0
-        self._start_time: float = 0.0
         self._started = False
-        self._in_base_ts: int | None = None
+        self._base_ts: int | None = None
+        self._out_cursor = 0
 
     def start(self) -> None:
         os.makedirs(self._dir, exist_ok=True)
@@ -86,13 +85,14 @@ class AudioRecorder:
         self._f_in.flush()
         self._f_out.flush()
         self._f_mix.flush()
-        self._start_time = time.monotonic()
         self._started = True
         log.info("Recording started: %s", self._dir)
 
-    def _expected_bytes(self) -> int:
-        elapsed = time.monotonic() - self._start_time
-        return int(elapsed * BYTES_PER_SECOND)
+    def _timestamp_to_bytes(self, media_ts_ms: int) -> int:
+        if self._base_ts is None:
+            self._base_ts = media_ts_ms
+        target = (media_ts_ms - self._base_ts) * BYTES_PER_SECOND // 1000
+        return max(0, target - (target % 2))
 
     def _pad_silence(self, f, written: int, target: int) -> int:
         """written 위치부터 target 위치까지 silence로 채운다."""
@@ -107,9 +107,13 @@ class AudioRecorder:
     def _write_to_mix(self, data: bytes, track_pos: int) -> None:
         if not self._f_mix:
             return
+        data = data[: len(data) - (len(data) % 2)]
+        if not data:
+            return
 
         if track_pos < self._mix_written:
             overlap = min(len(data), self._mix_written - track_pos)
+            overlap = overlap - (overlap % 2)
             self._f_mix.seek(44 + track_pos)
             existing = self._f_mix.read(overlap)
             mixed = _mix_samples(existing, data[:overlap])
@@ -135,10 +139,10 @@ class AudioRecorder:
         if not self._started or not self._f_in:
             return
         try:
-            if self._in_base_ts is None:
-                self._in_base_ts = media_ts_ms
-            target = (media_ts_ms - self._in_base_ts) * BYTES_PER_SECOND // 1000
-            target = target - (target % 2)  # 2-byte align
+            pcm16_8k = pcm16_8k[: len(pcm16_8k) - (len(pcm16_8k) % 2)]
+            if not pcm16_8k:
+                return
+            target = self._timestamp_to_bytes(media_ts_ms)
 
             gap = self._pad_silence(self._f_in, self._in_written, target)
             self._in_written += gap
@@ -149,16 +153,22 @@ class AudioRecorder:
         except Exception:
             log.exception("Error writing inbound audio")
 
-    def write_outbound(self, pcm16_8k: bytes) -> None:
+    def write_outbound(self, pcm16_8k: bytes, media_ts_ms: int | None = None) -> None:
         if not self._started or not self._f_out:
             return
         try:
-            target = self._expected_bytes()
+            pcm16_8k = pcm16_8k[: len(pcm16_8k) - (len(pcm16_8k) % 2)]
+            if not pcm16_8k:
+                return
+            target = self._out_cursor
+            if media_ts_ms is not None:
+                target = max(target, self._timestamp_to_bytes(media_ts_ms))
             gap = self._pad_silence(self._f_out, self._out_written, target)
             self._out_written += gap
             pos_before = self._out_written
             self._f_out.write(pcm16_8k)
             self._out_written += len(pcm16_8k)
+            self._out_cursor = self._out_written
             self._write_to_mix(pcm16_8k, pos_before)
         except Exception:
             log.exception("Error writing outbound audio")

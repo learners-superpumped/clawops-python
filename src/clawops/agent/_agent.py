@@ -272,12 +272,15 @@ class ClawOpsAgent:
             if self._hold_audio_chunks and hasattr(session, "set_hold_audio"):
                 session.set_hold_audio(self._hold_audio_chunks)
 
+            latest_media_ts = 0
+
             async def on_audio(ulaw: bytes, ts: int) -> None:
-                await session.feed_audio(ulaw, ts)
+                nonlocal latest_media_ts
+                latest_media_ts = ts
                 if recorder:
                     from ._audio import ulaw_to_pcm16
-
                     recorder.write_inbound(ulaw_to_pcm16(ulaw), media_ts_ms=ts)
+                await session.feed_audio(ulaw, ts)
 
             async def on_dtmf(digit: str) -> None:
                 self._on_dtmf_event(call, digit)
@@ -291,7 +294,13 @@ class ClawOpsAgent:
                 on_dtmf=on_dtmf,
             )
 
-            call._send_audio_fn = media_ws.send_audio
+            async def send_audio(ulaw: bytes) -> None:
+                if recorder:
+                    from ._audio import ulaw_to_pcm16
+                    recorder.write_outbound(ulaw_to_pcm16(ulaw), media_ts_ms=latest_media_ts)
+                await media_ws.send_audio(ulaw)
+
+            call._send_audio_fn = send_audio
             call._send_clear_fn = media_ws.send_clear
 
             async def _graceful_hangup() -> None:
