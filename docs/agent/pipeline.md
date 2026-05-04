@@ -27,6 +27,9 @@ agent = ClawOpsAgent(
 전화 오디오 (G.711 μ-law 8kHz)
     │
     ▼
+rx_gain 적용
+    │
+    ▼
 PCM16 8kHz → PCM16 16kHz ──► STT ──► SpeechEvent
                                           │
                     ┌─────────────────────┘
@@ -37,7 +40,13 @@ PCM16 8kHz → PCM16 16kHz ──► STT ──► SpeechEvent
                TTS (PCM16 오디오)
                     │
                     ▼
-         PCM16 → 8kHz → G.711 μ-law → 전화
+         PCM16 → 8kHz → G.711 μ-law
+                    │
+                    ▼
+               tx_gain 적용
+                    │
+                    ▼
+                   전화
 ```
 
 ## 내장 제공자

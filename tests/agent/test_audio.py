@@ -1,6 +1,9 @@
+import math
 import struct
 
-from clawops.agent._audio import ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
+import pytest
+
+from clawops.agent._audio import apply_pcm16_gain, apply_ulaw_gain, ulaw_to_pcm16, pcm16_to_ulaw, resample_pcm16
 
 
 def test_decode_silence():
@@ -58,3 +61,29 @@ def test_resample_24k_to_8k():
     pcm_24k = b'\x00\x80' * 240  # 240 samples
     pcm_8k = resample_pcm16(pcm_24k, from_rate=24000, to_rate=8000)
     assert len(pcm_8k) == 160  # 80 samples * 2 bytes
+
+
+def test_apply_pcm16_gain_scales_and_clips():
+    pcm = struct.pack("<4h", 1000, -1000, 20000, -20000)
+    result = apply_pcm16_gain(pcm, 2.0)
+    samples = struct.unpack("<4h", result)
+    assert samples == (2000, -2000, 32767, -32768)
+
+
+def test_apply_pcm16_gain_mute():
+    pcm = struct.pack("<2h", 1000, -1000)
+    result = apply_pcm16_gain(pcm, 0)
+    assert result == b"\x00\x00\x00\x00"
+
+
+def test_apply_pcm16_gain_rejects_invalid_gain():
+    with pytest.raises(ValueError, match="gain"):
+        apply_pcm16_gain(b"\x00\x00", -1)
+    with pytest.raises(ValueError, match="gain"):
+        apply_pcm16_gain(b"\x00\x00", math.inf)
+
+
+def test_apply_ulaw_gain_mute_to_silence():
+    ulaw = pcm16_to_ulaw(struct.pack("<2h", 1000, -1000))
+    result = apply_ulaw_gain(ulaw, 0)
+    assert result == b"\xff\xff"

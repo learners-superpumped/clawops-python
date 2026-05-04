@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import signal
 from typing import Any, Callable, Awaitable, TypedDict
@@ -15,6 +16,7 @@ from .._exceptions import AgentError
 from ._builtin_tools import BuiltinTool, resolve_builtin_tools
 from ._control_ws import ControlWebSocket
 from ._hold_audio import load_hold_audio
+from ._audio import apply_ulaw_gain, ulaw_to_pcm16
 from .mcp._client import MCPClient
 from ._media_ws import MediaWebSocket
 from ._session import CallSession
@@ -51,6 +53,8 @@ class ClawOpsAgent:
         builtin_tools: BuiltinTool | list[BuiltinTool] = BuiltinTool.ALL,
         passive_dtmf_debounce_ms: int = 500,
         tool_config: ToolConfig | None = None,
+        rx_gain: float = 1.0,
+        tx_gain: float = 1.0,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -75,6 +79,8 @@ class ClawOpsAgent:
         self._recording = recording
         self._recording_path = recording_path
         self._tracing = tracing
+        self._rx_gain = self._validate_gain("rx_gain", rx_gain)
+        self._tx_gain = self._validate_gain("tx_gain", tx_gain)
 
         if self._tracing is not None:
             setup_tracing(self._tracing)
@@ -94,6 +100,13 @@ class ClawOpsAgent:
         self._active_sessions: dict[str, CallSession] = {}
         self._control_ws: ControlWebSocket | None = None
         self._control_ws_task: asyncio.Task[Any] | None = None
+
+    @staticmethod
+    def _validate_gain(name: str, gain: float) -> float:
+        value = float(gain)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"{name}={gain!r} must be a finite number >= 0")
+        return value
 
     def tool(self, fn: Callable[..., Awaitable[str]]) -> Callable[..., Awaitable[str]]:
         return self._tool_registry.register(fn)
@@ -277,8 +290,8 @@ class ClawOpsAgent:
             async def on_audio(ulaw: bytes, ts: int) -> None:
                 nonlocal latest_media_ts
                 latest_media_ts = ts
+                ulaw = apply_ulaw_gain(ulaw, self._rx_gain)
                 if recorder:
-                    from ._audio import ulaw_to_pcm16
                     recorder.write_inbound(ulaw_to_pcm16(ulaw), media_ts_ms=ts)
                 await session.feed_audio(ulaw, ts)
 
@@ -295,8 +308,8 @@ class ClawOpsAgent:
             )
 
             async def send_audio(ulaw: bytes) -> None:
+                ulaw = apply_ulaw_gain(ulaw, self._tx_gain)
                 if recorder:
-                    from ._audio import ulaw_to_pcm16
                     recorder.write_outbound(ulaw_to_pcm16(ulaw), media_ts_ms=latest_media_ts)
                 await media_ws.send_audio(ulaw)
 

@@ -14,9 +14,13 @@ def test_agent_creation():
         account_id="AC_test",
         from_="07012341234",
         session=_make_session(system_prompt="test prompt"),
+        rx_gain=0.8,
+        tx_gain=1.2,
     )
     assert agent._from_number == "07012341234"
     assert agent._session._config.system_prompt == "test prompt"
+    assert agent._rx_gain == 0.8
+    assert agent._tx_gain == 1.2
 
 
 def test_agent_tool_decorator():
@@ -80,4 +84,23 @@ def test_agent_missing_session():
             api_key="sk_test",
             account_id="AC_test",
             from_="07012341234",
+        )
+
+
+def test_agent_rejects_invalid_gain():
+    with pytest.raises(ValueError, match="rx_gain"):
+        ClawOpsAgent(
+            api_key="sk_test",
+            account_id="AC_test",
+            from_="07012341234",
+            session=_make_session(),
+            rx_gain=-0.1,
+        )
+    with pytest.raises(ValueError, match="tx_gain"):
+        ClawOpsAgent(
+            api_key="sk_test",
+            account_id="AC_test",
+            from_="07012341234",
+            session=_make_session(),
+            tx_gain=float("inf"),
         )

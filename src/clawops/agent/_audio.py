@@ -5,6 +5,7 @@ G.711 mu-law (ulaw) ↔ PCM16 코덱을 제공한다.
 """
 from __future__ import annotations
 
+import math
 import struct
 
 _DECODE_TABLE = (
@@ -93,6 +94,38 @@ def resample_pcm16(pcm: bytes, *, from_rate: int, to_rate: int) -> bytes:
             val = samples[idx]
         out.append(int(val))
     return struct.pack(f"<{len(out)}h", *out)
+
+
+def apply_pcm16_gain(pcm: bytes, gain: float) -> bytes:
+    """PCM16 signed 16-bit LE 오디오에 gain을 적용한다."""
+    if not pcm:
+        return b""
+    if gain == 1.0:
+        return pcm
+    if not math.isfinite(gain) or gain < 0:
+        raise ValueError("gain must be a finite number greater than or equal to 0")
+
+    n_samples = len(pcm) // 2
+    samples = struct.unpack(f"<{n_samples}h", pcm)
+    scaled = []
+    for sample in samples:
+        value = int(round(sample * gain))
+        if value > 32767:
+            value = 32767
+        elif value < -32768:
+            value = -32768
+        scaled.append(value)
+    return struct.pack(f"<{len(scaled)}h", *scaled)
+
+
+def apply_ulaw_gain(ulaw: bytes, gain: float) -> bytes:
+    """G.711 mu-law 오디오에 gain을 적용한다."""
+    if not ulaw:
+        return b""
+    if gain == 1.0:
+        return ulaw
+    pcm = ulaw_to_pcm16(ulaw)
+    return pcm16_to_ulaw(apply_pcm16_gain(pcm, gain))
 
 
 def ulaw_to_pcm16(ulaw: bytes) -> bytes:
