@@ -4,6 +4,7 @@ from .message import Message
 from .message_params import MessageCreateParams, MessageListParams
 from .number import NumberListItem, NumberUpdateResponse, PhoneNumber
 from .number_params import NumberCreateParams, NumberUpdateParams
+from .recording import RecordingDownload
 from .shared import PaginationMeta
 from .summary import SummaryStatus
 from .transcript import TranscriptRequestAccepted, TranscriptSegment, TranscriptStatus
@@ -24,6 +25,7 @@ __all__ = [
     "NumberUpdateResponse",
     "PaginationMeta",
     "PhoneNumber",
+    "RecordingDownload",
     "SummaryStatus",
     "TranscriptRequestAccepted",
     "TranscriptSegment",

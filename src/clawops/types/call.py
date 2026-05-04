@@ -21,6 +21,9 @@ class Call(BaseModel):
         account_id: 계정 ID.
         date_created: 통화 생성 시각.
         date_updated: 통화 종료 시각. 종료 전이면 None.
+        recording_url: 녹음 다운로드 경로(상대). 녹음이 없으면 None.
+            예: '/v1/accounts/AC.../recordings/CA...'. 다운로드는
+            ``client.accounts(account_id).recordings.download(call_id)`` 사용.
     """
 
     call_id: str
@@ -29,6 +32,7 @@ class Call(BaseModel):
     from_: str
     direction: Literal["outbound", "inbound"]
     duration: Optional[int] = None
+    recording_url: Optional[str] = None
     account_id: str
     date_created: datetime
     date_updated: Optional[datetime] = None

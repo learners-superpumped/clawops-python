@@ -214,6 +214,24 @@ ai_call = client.calls.create(
 )
 ```
 
+### 통화 녹음 (Recordings)
+
+콘솔에서 들리는 것과 동일한 서버측 MixMonitor 원본(WAV PCM 16bit mono 8kHz)을 다운로드합니다. SDK 측 mix.wav 가 아닌 서버에서 합성된 파일이라 싱크/볼륨이 정상입니다.
+
+```python
+# call list 응답의 recording_url 필드로 녹음 유무 확인 가능
+page = client.calls.list(page_size=10)
+for call in page.data:
+    if not call.recording_url:  # failed/no-answer 등은 None
+        continue
+    rec = client.recordings.download(call.call_id)
+    with open(rec.filename or f"{call.call_id}.wav", "wb") as f:
+        f.write(rec.data)
+    print(rec.content_type, len(rec.data), "bytes")
+```
+
+녹음이 없는 통화(`recording_url is None`)에 호출하면 `NotFoundError(404)` 가 발생합니다.
+
 ### 전화번호 (Numbers)
 
 ```python

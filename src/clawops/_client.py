@@ -11,6 +11,7 @@ from .resources.accounts import AccountContext, AsyncAccountContext
 from .resources.calls import AsyncCalls, Calls
 from .resources.messages import AsyncMessages, Messages
 from .resources.numbers import AsyncNumbers, Numbers
+from .resources.recordings import AsyncRecordings, Recordings
 from .resources.assignment_links import AssignmentLinks, AsyncAssignmentLinks
 from .resources.webhook_logs import AsyncWebhookLogs, WebhookLogs
 from .webhooks import Webhooks
@@ -85,6 +86,11 @@ class ClawOps(SyncAPIClient):
     def numbers(self) -> Numbers:
         """전화번호(Numbers) 리소스에 접근합니다."""
         return Numbers(client=self, account_id=self._default_account_id)
+
+    @property
+    def recordings(self) -> Recordings:
+        """통화 녹음(Recordings) 리소스에 접근합니다."""
+        return Recordings(client=self, account_id=self._default_account_id)
 
     @property
     def messages(self) -> Messages:
@@ -170,6 +176,10 @@ class AsyncClawOps(AsyncAPIClient):
     @property
     def numbers(self) -> AsyncNumbers:
         return AsyncNumbers(client=self, account_id=self._default_account_id)
+
+    @property
+    def recordings(self) -> AsyncRecordings:
+        return AsyncRecordings(client=self, account_id=self._default_account_id)
 
     @property
     def messages(self) -> AsyncMessages:

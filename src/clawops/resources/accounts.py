@@ -6,6 +6,7 @@ from .assignment_links import AssignmentLinks, AsyncAssignmentLinks
 from .calls import AsyncCalls, Calls
 from .messages import AsyncMessages, Messages
 from .numbers import AsyncNumbers, Numbers
+from .recordings import AsyncRecordings, Recordings
 from .webhook_logs import AsyncWebhookLogs, WebhookLogs
 
 if TYPE_CHECKING:
@@ -39,6 +40,10 @@ class AccountContext:
         return Numbers(client=self._client, account_id=self._account_id)
 
     @property
+    def recordings(self) -> Recordings:
+        return Recordings(client=self._client, account_id=self._account_id)
+
+    @property
     def webhook_logs(self) -> WebhookLogs:
         return WebhookLogs(client=self._client, account_id=self._account_id)
 
@@ -65,6 +70,10 @@ class AsyncAccountContext:
     @property
     def numbers(self) -> AsyncNumbers:
         return AsyncNumbers(client=self._client, account_id=self._account_id)
+
+    @property
+    def recordings(self) -> AsyncRecordings:
+        return AsyncRecordings(client=self._client, account_id=self._account_id)
 
     @property
     def webhook_logs(self) -> AsyncWebhookLogs:

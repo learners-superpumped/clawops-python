@@ -92,18 +92,17 @@ class SyncAPIClient:
             headers.update(extra_headers)
         return headers
 
-    def _request(
+    def _send(
         self,
         method: str,
         path: str,
         *,
         body: dict[str, Any] | None = None,
         query: dict[str, Any] | None = None,
-        cast_to: type[_T] | None = None,
         extra_headers: dict[str, str] | None = None,
         extra_query: dict[str, object] | None = None,
         timeout: float | httpx.Timeout | None = None,
-    ) -> _T | None:
+    ) -> httpx.Response:
         headers = self._build_headers(extra_headers)
 
         params = query.copy() if query else {}
@@ -140,12 +139,7 @@ class SyncAPIClient:
                 raise APIConnectionError(request=httpx.Request(method, self._base_url + path)) from e
 
             if response.is_success:
-                if response.status_code == 204 or cast_to is None:
-                    return None
-                try:
-                    return cast_to.model_validate(response.json())
-                except pydantic.ValidationError as e:
-                    raise APIResponseValidationError(response=response) from e
+                return response
 
             if retries_left > 0 and self._should_retry(response):
                 retries_left -= 1
@@ -153,6 +147,29 @@ class SyncAPIClient:
                 continue
 
             raise _make_status_error(response=response)
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
+        cast_to: type[_T] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> _T | None:
+        response = self._send(
+            method, path, body=body, query=query,
+            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+        )
+        if response.status_code == 204 or cast_to is None:
+            return None
+        try:
+            return cast_to.model_validate(response.json())
+        except pydantic.ValidationError as e:
+            raise APIResponseValidationError(response=response) from e
 
     def _should_retry(self, response: httpx.Response) -> bool:
         if response.status_code in (408, 409, 429):
@@ -192,6 +209,16 @@ class SyncAPIClient:
     def _delete(self, path: str, *, extra_headers: dict[str, str] | None = None,
                 timeout: float | httpx.Timeout | None = None) -> None:
         self._request("DELETE", path, cast_to=None, extra_headers=extra_headers, timeout=timeout)
+
+    def _get_raw(
+        self,
+        path: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> httpx.Response:
+        """바이너리 응답(GET) 을 httpx.Response 그대로 반환. 4xx/5xx 는 에러로 매핑."""
+        return self._send("GET", path, extra_headers=extra_headers, timeout=timeout)
 
     def close(self) -> None:
         self._client.close()
@@ -251,18 +278,17 @@ class AsyncAPIClient:
             headers.update(extra_headers)
         return headers
 
-    async def _request(
+    async def _send(
         self,
         method: str,
         path: str,
         *,
         body: dict[str, Any] | None = None,
         query: dict[str, Any] | None = None,
-        cast_to: type[_T] | None = None,
         extra_headers: dict[str, str] | None = None,
         extra_query: dict[str, object] | None = None,
         timeout: float | httpx.Timeout | None = None,
-    ) -> _T | None:
+    ) -> httpx.Response:
         import asyncio
 
         headers = self._build_headers(extra_headers)
@@ -297,12 +323,7 @@ class AsyncAPIClient:
                 raise APIConnectionError(request=httpx.Request(method, self._base_url + path)) from e
 
             if response.is_success:
-                if response.status_code == 204 or cast_to is None:
-                    return None
-                try:
-                    return cast_to.model_validate(response.json())
-                except pydantic.ValidationError as e:
-                    raise APIResponseValidationError(response=response) from e
+                return response
 
             if retries_left > 0 and self._should_retry(response):
                 retries_left -= 1
@@ -310,6 +331,29 @@ class AsyncAPIClient:
                 continue
 
             raise _make_status_error(response=response)
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
+        cast_to: type[_T] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, object] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> _T | None:
+        response = await self._send(
+            method, path, body=body, query=query,
+            extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
+        )
+        if response.status_code == 204 or cast_to is None:
+            return None
+        try:
+            return cast_to.model_validate(response.json())
+        except pydantic.ValidationError as e:
+            raise APIResponseValidationError(response=response) from e
 
     def _should_retry(self, response: httpx.Response) -> bool:
         if response.status_code in (408, 409, 429):
@@ -349,6 +393,16 @@ class AsyncAPIClient:
     async def _delete(self, path: str, *, extra_headers: dict[str, str] | None = None,
                       timeout: float | httpx.Timeout | None = None) -> None:
         await self._request("DELETE", path, cast_to=None, extra_headers=extra_headers, timeout=timeout)
+
+    async def _get_raw(
+        self,
+        path: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> httpx.Response:
+        """바이너리 응답(GET) 을 httpx.Response 그대로 반환. 4xx/5xx 는 에러로 매핑."""
+        return await self._send("GET", path, extra_headers=extra_headers, timeout=timeout)
 
     async def close(self) -> None:
         await self._client.aclose()
