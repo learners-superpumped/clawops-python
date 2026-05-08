@@ -65,7 +65,7 @@ class OpenAIRealtimeConfig:
     system_prompt: str
     openai_api_key: str
     voice: str = "marin"
-    model: str = "gpt-realtime-1.5"
+    model: str = "gpt-realtime-2"
     language: str = "ko"
     turn_detection: RealtimeAudioInputTurnDetectionParam | None = None
     greeting: bool = True
@@ -74,7 +74,7 @@ class OpenAIRealtimeConfig:
 class OpenAIRealtime:
     """OpenAI Realtime API 기반 음성 세션.
 
-    Session Protocol을 구현한다. ``gpt-realtime-1.5``, ``gpt-4o-mini-realtime``
+    Session Protocol을 구현한다. ``gpt-realtime-2``, ``gpt-4o-mini-realtime``
     등 OpenAI의 realtime 모델을 사용한다.
     """
 
@@ -83,7 +83,7 @@ class OpenAIRealtime:
         *,
         api_key: str | None = None,
         system_prompt: str = "",
-        model: str = "gpt-realtime-1.5",
+        model: str = "gpt-realtime-2",
         voice: str = "marin",
         language: str = "ko",
         turn_detection: RealtimeAudioInputTurnDetectionParam | None = None,
