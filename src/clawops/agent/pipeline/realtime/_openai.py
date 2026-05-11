@@ -95,6 +95,10 @@ class OpenAIRealtime:
             raise ImportError("openai is required for OpenAIRealtime. Install it with: pip install clawops[openai]")
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise ValueError(
+                "OpenAI API key is required. Set OPENAI_API_KEY env var or pass api_key argument."
+            )
         if turn_detection is None:
             turn_detection = {
                 "type": "semantic_vad",

@@ -243,7 +243,38 @@ class ClawOpsAgent:
         if self._control_ws:
             await self._control_ws.send({"event": "call.accept", "callId": call_id})
 
-        asyncio.create_task(self._start_call_session(call, media_url))
+        asyncio.create_task(self._safe_start_call_session(call, media_url))
+
+    async def _safe_start_call_session(self, call: CallSession, media_url: str) -> None:
+        """_start_call_session 의 예외를 잡아 control WS 로 call.session_failed 전송한다.
+
+        OpenAI/Gemini API 키 누락 등 session.start() 단계 실패는 media WS connect
+        에 도달하지 못해 call-engine 이 30 초간 무음 통화를 유지하게 만든다. 서버에
+        즉시 알려서 fail-fast 시키고 _active_sessions 에서 정리한다.
+        """
+        try:
+            await self._start_call_session(call, media_url)
+        except Exception as e:
+            log.error(
+                "Session start failed for %s: %s",
+                call.call_id,
+                e,
+                exc_info=True,
+            )
+            if self._control_ws:
+                try:
+                    await self._control_ws.send(
+                        {
+                            "event": "call.session_failed",
+                            "callId": call.call_id,
+                            "reason": type(e).__name__,
+                            "message": str(e),
+                        }
+                    )
+                except Exception:
+                    pass
+            self._active_sessions.pop(call.call_id, None)
+            self._call_sessions.pop(call.call_id, None)
 
     async def _start_call_session(self, call: CallSession, media_url: str) -> None:
         with call_span(
@@ -395,10 +426,26 @@ class ClawOpsAgent:
         call = self._active_sessions.get(call_id)
         if not call:
             log.warning(f"Unknown outbound call: {call_id}")
+            if self._control_ws:
+                try:
+                    await self._control_ws.send(
+                        {
+                            "event": "call.session_failed",
+                            "callId": call_id,
+                            "reason": "UnknownOutboundCall",
+                            "message": (
+                                "SDK 의 _active_sessions 에 callId 가 없습니다. "
+                                "agent.call() 메서드 대신 REST API 를 직접 호출했거나 "
+                                "발신 후 SDK 프로세스가 재시작된 경우입니다."
+                            ),
+                        }
+                    )
+                except Exception:
+                    pass
             return
         call.status = "in-progress"
         log.info(f"Outbound call answered: {call.from_number} -> {call.to_number} ({call_id})")
-        asyncio.create_task(self._start_call_session(call, media_url))
+        asyncio.create_task(self._safe_start_call_session(call, media_url))
 
     async def _handle_ringing(self, data: dict[str, Any]) -> None:
         call_id = data.get("callId", "")
