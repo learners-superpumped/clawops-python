@@ -184,7 +184,7 @@ class OpenAIRealtime:
                         "format": {"type": "audio/pcmu"},
                         "noise_reduction": {"type": "far_field"},
                         "transcription": {
-                            "model": "whisper-1",
+                            "model": "gpt-realtime-whisper",
                             "language": self._config.language,
                         },
                         "turn_detection": self._config.turn_detection,
