@@ -119,14 +119,37 @@ class PipelineSession:
             "builtinTools": [],
         }
 
-    async def start(self, call: CallSession) -> None:
-        self._call = call
+    async def prewarm(self) -> None:
+        """PipelineSession prewarm — CallSession 없이 호출 가능.
+
+        STT/LLM/TTS 자원은 lazy 이므로 BufferingCall 만 세팅하고
+        greeting trigger 가 있으면 TTS 합성을 미리 시작한다.
+        """
+        from ._buffering_call import _BufferingCall
+
+        self._call = _BufferingCall()  # type: ignore[assignment]
         self._running = True
         self._messages = [{"role": "system", "content": self._system_prompt}]
         self._tasks.append(asyncio.create_task(self._stt_loop()))
         if self._greeting:
             self._tasks.append(asyncio.create_task(self._generate_greeting()))
-        log.info("PipelineSession started")
+        log.info("PipelineSession prewarmed")
+
+    async def attach(self, call: CallSession) -> None:
+        """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush."""
+        from ._buffering_call import _BufferingCall
+
+        prev = self._call
+        self._call = call
+
+        if isinstance(prev, _BufferingCall):
+            for chunk in prev.drain_buffer():
+                await call.send_audio(chunk)
+
+    async def start(self, call: CallSession) -> None:
+        """기존 호환 경로 — prewarm + attach wrapper."""
+        await self.prewarm()
+        await self.attach(call)
 
     async def feed_audio(self, ulaw: bytes, timestamp: int) -> None:
         if not self._running:
