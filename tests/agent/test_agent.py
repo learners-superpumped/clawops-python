@@ -136,6 +136,36 @@ async def test_outbound_ready_triggers_prewarm():
 
 
 @pytest.mark.asyncio
+async def test_prewarm_disabled_skips_prewarm():
+    """prewarm_enabled=False 면 outbound_ready 수신 시 prewarm task 가 등록되지 않는다."""
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock()
+
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        session=session_mock,
+        prewarm_enabled=False,
+    )
+    agent._safe_start_call_session = AsyncMock()  # type: ignore[method-assign]
+
+    from clawops.agent._session import CallSession
+
+    call = CallSession(
+        call_id="C3",
+        from_number="07012341234",
+        to_number="07099998888",
+        account_id="AC_test",
+        direction="outbound",
+    )
+    agent._active_sessions["C3"] = call
+    await agent._handle_outbound_ready({"callId": "C3", "mediaUrl": "wss://media/C3"})
+    assert "C3" not in agent._prewarm_tasks
+    session_mock.prewarm.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_prewarm_failure_marks_call_failed():
     """prewarm 실패 시 _prewarm_failed 셋에 등록된다."""
     session_mock = MagicMock()

@@ -56,6 +56,7 @@ class ClawOpsAgent:
         tool_config: ToolConfig | None = None,
         rx_gain: float = 1.0,
         tx_gain: float = 1.0,
+        prewarm_enabled: bool = True,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -82,6 +83,7 @@ class ClawOpsAgent:
         self._tracing = tracing
         self._rx_gain = self._validate_gain("rx_gain", rx_gain)
         self._tx_gain = self._validate_gain("tx_gain", tx_gain)
+        self._prewarm_enabled = prewarm_enabled
 
         if self._tracing is not None:
             setup_tracing(self._tracing)
@@ -471,7 +473,8 @@ class ClawOpsAgent:
 
         # 세션 prewarm 을 백그라운드로 시작 — media WS 연결과 병렬 진행.
         # _start_call_session 이 await 후 attach() 로 부착한다.
-        if call_id not in self._prewarm_tasks:
+        # prewarm_enabled=False 면 기존 start() 경로로 동작.
+        if self._prewarm_enabled and call_id not in self._prewarm_tasks:
             self._prewarm_tasks[call_id] = asyncio.create_task(
                 self._prewarm_session(call_id)
             )
