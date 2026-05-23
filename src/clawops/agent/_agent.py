@@ -10,6 +10,7 @@ import logging
 import math
 import os
 import signal
+import time
 from typing import Any, Callable, Awaitable, TypedDict
 
 from .._exceptions import AgentError
@@ -376,6 +377,9 @@ class ClawOpsAgent:
             if prewarm_task is not None and not prewarm_failed:
                 try:
                     await prewarm_task
+                    log.info(
+                        f"[PREWARM-T] attach call_id={call.call_id} t={time.monotonic():.3f}"
+                    )
                     await session.attach(call)
                 except Exception as e:
                     log.warning(f"prewarm await/attach failed, falling back to start: {e}")
@@ -480,10 +484,15 @@ class ClawOpsAgent:
         실패/timeout 시 _prewarm_failed 에 등록하여 _start_call_session 이
         기존 start() 경로로 fallback 한다.
         """
+        t0 = time.monotonic()
+        log.info(f"[PREWARM-T] start call_id={call_id} t={t0:.3f}")
         try:
             await asyncio.wait_for(self._session.prewarm(), timeout=10.0)
+            log.info(
+                f"[PREWARM-T] done call_id={call_id} elapsed_ms={(time.monotonic() - t0) * 1000:.0f}"
+            )
         except Exception as e:
-            log.warning(f"prewarm failed for {call_id}: {e}")
+            log.warning(f"[PREWARM-T] failed call_id={call_id} err={e}")
             self._prewarm_failed.add(call_id)
 
     async def _handle_ringing(self, data: dict[str, Any]) -> None:

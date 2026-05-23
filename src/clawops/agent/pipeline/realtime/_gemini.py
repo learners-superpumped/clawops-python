@@ -267,13 +267,20 @@ class GeminiRealtime:
 
     async def attach(self, call: CallSession) -> None:
         """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush."""
+        import time as _time
         from .._buffering_call import _BufferingCall
 
         prev = self._call
         self._call = call
 
         if isinstance(prev, _BufferingCall):
-            for chunk in prev.drain_buffer():
+            drained = prev.drain_buffer()
+            if drained:
+                log.info(
+                    f"[PREWARM-T] first-audio call_id={getattr(call, 'call_id', '?')} "
+                    f"t={_time.monotonic():.3f} buffered_chunks={len(drained)}"
+                )
+            for chunk in drained:
                 await call.send_audio(chunk)
 
     async def start(self, call: CallSession) -> None:
