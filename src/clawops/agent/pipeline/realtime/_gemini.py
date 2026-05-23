@@ -201,13 +201,8 @@ class GeminiRealtime:
             "builtinTools": [],
         }
 
-    async def start(self, call: CallSession) -> None:
-        self._call = call
-
-        self._llm_span_ctx = llm_session_span(self._model, system="google", voice=self._voice)
-        self._llm_span = self._llm_span_ctx.__enter__()
-
-        # ── Config ──
+    async def _open_live_session(self) -> Any:
+        """Gemini Live 세션을 열어 핸들을 반환한다. 테스트 mocking 지점."""
         tool_schemas = self._build_tool_schemas()
 
         config: dict[str, Any] = {
@@ -235,13 +230,25 @@ class GeminiRealtime:
         log.debug("Gemini SDK final config: %s", config)
         log.debug(f"Gemini SDK tool count: {len(tool_schemas)}")
 
-        # SDK가 setup 메시지를 자동으로 처리
         self._live_ctx = self._client.aio.live.connect(
             model=self._model,
             config=config,
         )
+        return await self._live_ctx.__aenter__()
+
+    async def prewarm(self) -> None:
+        """Gemini Live 세션 prewarm — CallSession 없이 호출 가능."""
+        from .._buffering_call import _BufferingCall
+
+        self._call = _BufferingCall()  # type: ignore[assignment]
+        self._audio_remainder = b""
+        self._sent_audio_chunks = 0
+
+        self._llm_span_ctx = llm_session_span(self._model, system="google", voice=self._voice)
+        self._llm_span = self._llm_span_ctx.__enter__()
+
         try:
-            self._session = await self._live_ctx.__aenter__()
+            self._session = await self._open_live_session()
         except Exception:
             if self._llm_span_ctx:
                 import sys
@@ -249,7 +256,7 @@ class GeminiRealtime:
                 self._llm_span_ctx.__exit__(*sys.exc_info())
                 self._llm_span_ctx = None
             raise
-        log.info("Gemini Live SDK session connected")
+        log.info("Gemini Live SDK session connected (prewarm)")
 
         if self._greeting:
             await self._session.send_realtime_input(
@@ -257,6 +264,22 @@ class GeminiRealtime:
             )
 
         self._tasks.append(asyncio.create_task(self._receive_loop()))
+
+    async def attach(self, call: CallSession) -> None:
+        """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush."""
+        from .._buffering_call import _BufferingCall
+
+        prev = self._call
+        self._call = call
+
+        if isinstance(prev, _BufferingCall):
+            for chunk in prev.drain_buffer():
+                await call.send_audio(chunk)
+
+    async def start(self, call: CallSession) -> None:
+        """기존 호환 경로 — prewarm + attach wrapper."""
+        await self.prewarm()
+        await self.attach(call)
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
         if not self._session:

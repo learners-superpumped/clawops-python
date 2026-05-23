@@ -39,3 +39,15 @@ def test_session_protocol_has_feed_dtmf():
     """Session 프로토콜에 feed_dtmf 메서드가 정의되어 있는지 확인."""
     from clawops.agent.pipeline._base import Session
     assert hasattr(Session, "feed_dtmf")
+
+
+def test_session_protocol_has_prewarm():
+    """Session Protocol 에 prewarm() 가 정의되어 있어야 한다."""
+    from clawops.agent.pipeline._base import Session
+    assert "prewarm" in dir(Session)
+
+
+def test_session_protocol_has_attach():
+    """Session Protocol 에 attach(call) 이 정의되어 있어야 한다."""
+    from clawops.agent.pipeline._base import Session
+    assert "attach" in dir(Session)

@@ -18,7 +18,19 @@ class Session(Protocol):
     """
 
     async def start(self, call: CallSession) -> None:
-        """세션 시작 (WS 연결, 인사말 등)."""
+        """세션 시작 (WS 연결, 인사말 등). prewarm + attach 의 thin wrapper."""
+        ...
+
+    async def prewarm(self) -> None:
+        """LLM WS 연결 + session.update 만 수행한다. CallSession 없이 호출 가능.
+
+        prewarm 후 도착하는 audio delta 는 내부 버퍼에 누적된다.
+        attach() 호출 시 실제 CallSession 으로 flush.
+        """
+        ...
+
+    async def attach(self, call: CallSession) -> None:
+        """prewarmed 세션에 실제 CallSession 을 부착하고 버퍼를 flush 한다."""
         ...
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:

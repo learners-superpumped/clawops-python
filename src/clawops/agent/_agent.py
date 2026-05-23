@@ -10,7 +10,9 @@ import logging
 import math
 import os
 import signal
-from typing import Any, Callable, Awaitable, TypedDict
+from typing import Any, Callable, Awaitable, Literal, TypedDict
+
+MachineDetection = Literal["Enable", "Hangup"]
 
 from .._exceptions import AgentError
 from ._builtin_tools import BuiltinTool, resolve_builtin_tools
@@ -55,6 +57,7 @@ class ClawOpsAgent:
         tool_config: ToolConfig | None = None,
         rx_gain: float = 1.0,
         tx_gain: float = 1.0,
+        machine_detection: MachineDetection | None = None,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -81,6 +84,7 @@ class ClawOpsAgent:
         self._tracing = tracing
         self._rx_gain = self._validate_gain("rx_gain", rx_gain)
         self._tx_gain = self._validate_gain("tx_gain", tx_gain)
+        self._machine_detection: MachineDetection | None = machine_detection
 
         if self._tracing is not None:
             setup_tracing(self._tracing)
@@ -176,17 +180,29 @@ class ClawOpsAgent:
         except Exception:
             pass
 
-    async def call(self, to: str, *, timeout: int = 60) -> CallSession:
+    async def call(
+        self,
+        to: str,
+        *,
+        timeout: int = 60,
+        machine_detection: MachineDetection | None = None,
+    ) -> CallSession:
         """발신 전화를 건다. CallSession을 즉시 리턴 (queued 상태).
 
         connect()가 호출되지 않은 상태면 자동으로 connect()를 먼저 수행한다.
+
+        machine_detection 우선순위:
+        호출 인자 > 인스턴스 default (__init__의 machine_detection) > None.
         """
         await self.connect()
 
         import aiohttp as _aiohttp
 
         url = f"{self._base_url}/v1/accounts/{self._account_id}/calls"
-        body = {"To": to, "From": self._from_number, "Timeout": timeout}
+        body: dict[str, Any] = {"To": to, "From": self._from_number, "Timeout": timeout}
+        effective_md = machine_detection if machine_detection is not None else self._machine_detection
+        if effective_md is not None:
+            body["MachineDetection"] = effective_md
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
