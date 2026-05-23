@@ -50,6 +50,24 @@ async def on_start(call):
 asyncio.run(agent.serve())  # Ctrl+C로 종료
 ```
 
+### Outbound 발신 Prewarm (낮은 첫 음성 latency)
+
+outbound 통화에서 상대 응답 직후 첫 음성까지의 지연을 줄이기 위해, ClawOpsAgent 는
+control WS 의 `call.outbound_ready` 이벤트 수신 즉시 LLM WebSocket 을 미리 연결하고
+첫 audio delta 를 메모리에 누적한다 (prewarm + first-audio prebuffer). media WS 가 연결되면
+누적된 chunk 를 flush 하여 사용자가 첫 음성을 빠르게 듣게 한다.
+
+```python
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=OpenAIRealtime(system_prompt="..."),
+    prewarm_enabled=True,  # default True
+)
+```
+
+비용/효과 검증 단계에서는 `prewarm_enabled=False` 로 비활성화 가능하다.
+측정 스크립트: `scripts/measure_prewarm_cost.py` (PREWARM-T 로그 파싱).
+
 ### Call Transfer (통화 전환)
 
 AI가 통화 중 다른 번호로 전환할 수 있습니다. Blind(즉시)와 Warm(안내 후) 모드를 지원합니다.
