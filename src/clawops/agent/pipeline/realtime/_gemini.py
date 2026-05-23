@@ -505,8 +505,11 @@ class GeminiRealtime:
     async def _cleanup(self) -> None:
         if self._live_ctx:
             try:
-                await self._live_ctx.__aexit__(None, None, None)
-            except Exception as e:
+                await asyncio.wait_for(
+                    self._live_ctx.__aexit__(None, None, None),
+                    timeout=2.0,
+                )
+            except (asyncio.TimeoutError, Exception) as e:
                 log.debug(f"Gemini SDK cleanup: {e}")
             self._live_ctx = None
             self._session = None

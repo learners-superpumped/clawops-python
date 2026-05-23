@@ -452,7 +452,10 @@ class OpenAIRealtime:
     async def stop(self) -> None:
         # 1) 연결 닫기 → receive loop의 async for가 자연 종료
         if self._connection:
-            await self._connection.close()
+            try:
+                await asyncio.wait_for(self._connection.close(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                log.warning(f"OpenAI Realtime connection close error: {e}")
             self._connection = None
         # 2) 남은 태스크 정리
         for task in self._tasks:
@@ -468,7 +471,10 @@ class OpenAIRealtime:
 
     async def _cleanup(self) -> None:
         if self._connection:
-            await self._connection.close()
+            try:
+                await asyncio.wait_for(self._connection.close(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                log.warning(f"OpenAI Realtime connection cleanup error: {e}")
             self._connection = None
         self._close_llm_span()
 
