@@ -69,7 +69,9 @@ class PipelineSession:
         self._language = language
         self._recorder = recorder
 
-        self._call: CallSession | None = None
+        from ._buffering_call import _BufferingCall as _BC
+
+        self._call: CallSession | _BC | None = None
         self._messages: list[dict[str, Any]] = []
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._running = False
@@ -127,7 +129,7 @@ class PipelineSession:
         """
         from ._buffering_call import _BufferingCall
 
-        self._call = _BufferingCall()  # type: ignore[assignment]
+        self._call = _BufferingCall()
         self._running = True
         self._messages = [{"role": "system", "content": self._system_prompt}]
         self._tasks.append(asyncio.create_task(self._stt_loop()))
@@ -137,21 +139,11 @@ class PipelineSession:
 
     async def attach(self, call: CallSession) -> None:
         """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush."""
-        import time as _time
-        from ._buffering_call import _BufferingCall
+        from ._buffering_call import drain_into
 
         prev = self._call
         self._call = call
-
-        if isinstance(prev, _BufferingCall):
-            drained = prev.drain_buffer()
-            if drained:
-                log.info(
-                    f"[PREWARM-T] first-audio call_id={getattr(call, 'call_id', '?')} "
-                    f"t={_time.monotonic():.3f} buffered_chunks={len(drained)}"
-                )
-            for chunk in drained:
-                await call.send_audio(chunk)
+        await drain_into(prev, call)
 
     async def start(self, call: CallSession) -> None:
         """기존 호환 경로 — prewarm + attach wrapper."""

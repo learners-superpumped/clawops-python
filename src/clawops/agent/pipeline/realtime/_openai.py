@@ -118,7 +118,9 @@ class OpenAIRealtime:
         self._builtin_tools: set[BuiltinTool] | None = None
         self._client: AsyncOpenAI | None = None
         self._connection: AsyncRealtimeConnection | None = None
-        self._call: CallSession | None = None
+        from .._buffering_call import _BufferingCall as _BC
+
+        self._call: CallSession | _BC | None = None
         self._playback: _PlaybackState | None = None  # 현재 재생 중인 응답 상태
         self._latest_media_ts: int = 0
         self._recorder = recorder
@@ -176,7 +178,7 @@ class OpenAIRealtime:
         """
         from .._buffering_call import _BufferingCall  # local import: 순환 회피
 
-        self._call = _BufferingCall()  # type: ignore[assignment]
+        self._call = _BufferingCall()
         self._latest_media_ts = 0
 
         # Start LLM session span
@@ -224,21 +226,11 @@ class OpenAIRealtime:
 
         prewarm() 이 선행되어 있어야 한다. start() 는 prewarm+attach wrapper.
         """
-        import time as _time
-        from .._buffering_call import _BufferingCall
+        from .._buffering_call import drain_into
 
         prev = self._call
         self._call = call
-
-        if isinstance(prev, _BufferingCall):
-            drained = prev.drain_buffer()
-            if drained:
-                log.info(
-                    f"[PREWARM-T] first-audio call_id={getattr(call, 'call_id', '?')} "
-                    f"t={_time.monotonic():.3f} buffered_chunks={len(drained)}"
-                )
-            for chunk in drained:
-                await call.send_audio(chunk)
+        await drain_into(prev, call)
 
     async def start(self, call: CallSession) -> None:
         """기존 호환 경로 — prewarm + attach 의 thin wrapper."""

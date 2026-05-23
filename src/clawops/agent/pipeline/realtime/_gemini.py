@@ -161,7 +161,9 @@ class GeminiRealtime:
         self._client = genai.Client(api_key=api_key) if api_key else genai.Client()
         self._live_ctx: Any | None = None  # async context manager
         self._session: Any | None = None  # AsyncLiveSession
-        self._call: CallSession | None = None
+        from .._buffering_call import _BufferingCall as _BC
+
+        self._call: CallSession | _BC | None = None
         self._sent_audio_chunks: int = 0
         self._pending_tool_call: Any | None = None
         self._tasks: list[asyncio.Task[Any]] = []
@@ -240,7 +242,7 @@ class GeminiRealtime:
         """Gemini Live 세션 prewarm — CallSession 없이 호출 가능."""
         from .._buffering_call import _BufferingCall
 
-        self._call = _BufferingCall()  # type: ignore[assignment]
+        self._call = _BufferingCall()
         self._audio_remainder = b""
         self._sent_audio_chunks = 0
 
@@ -267,21 +269,11 @@ class GeminiRealtime:
 
     async def attach(self, call: CallSession) -> None:
         """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush."""
-        import time as _time
-        from .._buffering_call import _BufferingCall
+        from .._buffering_call import drain_into
 
         prev = self._call
         self._call = call
-
-        if isinstance(prev, _BufferingCall):
-            drained = prev.drain_buffer()
-            if drained:
-                log.info(
-                    f"[PREWARM-T] first-audio call_id={getattr(call, 'call_id', '?')} "
-                    f"t={_time.monotonic():.3f} buffered_chunks={len(drained)}"
-                )
-            for chunk in drained:
-                await call.send_audio(chunk)
+        await drain_into(prev, call)
 
     async def start(self, call: CallSession) -> None:
         """기존 호환 경로 — prewarm + attach wrapper."""
