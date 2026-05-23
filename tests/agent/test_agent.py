@@ -21,6 +21,19 @@ def test_agent_creation():
     assert agent._session._config.system_prompt == "test prompt"
     assert agent._rx_gain == 0.8
     assert agent._tx_gain == 1.2
+    # machine_detection default 는 None
+    assert agent._machine_detection is None
+
+
+def test_agent_machine_detection_default():
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        session=_make_session(),
+        machine_detection="Hangup",
+    )
+    assert agent._machine_detection == "Hangup"
 
 
 def test_agent_tool_decorator():
