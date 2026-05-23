@@ -385,10 +385,16 @@ class ClawOpsAgent:
                     await session.attach(call)
                 except Exception as e:
                     log.warning(f"prewarm await/attach failed, falling back to start: {e}")
+                    # cancel + 명시적 수거 (B4: leak/warning 방지)
+                    if not prewarm_task.done():
+                        prewarm_task.cancel()
+                    await asyncio.gather(prewarm_task, return_exceptions=True)
                     await session.start(call)
             else:
                 if prewarm_task is not None and not prewarm_task.done():
                     prewarm_task.cancel()
+                if prewarm_task is not None:
+                    await asyncio.gather(prewarm_task, return_exceptions=True)
                 await session.start(call)
 
             # Send call telemetry (best-effort)
@@ -518,6 +524,8 @@ class ClawOpsAgent:
             prewarm_task = self._prewarm_tasks.pop(call_id, None)
             if prewarm_task is not None and not prewarm_task.done():
                 prewarm_task.cancel()
+            if prewarm_task is not None:
+                await asyncio.gather(prewarm_task, return_exceptions=True)
             self._prewarm_failed.discard(call_id)
 
     async def _handle_ended(self, data: dict[str, Any]) -> None:
@@ -528,10 +536,12 @@ class ClawOpsAgent:
             call._mark_ended()
         self._active_sessions.pop(call_id, None)
         self._call_sessions.pop(call_id, None)
-        # prewarm leak 방지 — attach 안 된 채 hangup 발생 시 task cancel.
+        # prewarm leak 방지 — attach 안 된 채 hangup 발생 시 task cancel + 명시 수거 (B4/B5).
         prewarm_task = self._prewarm_tasks.pop(call_id, None)
         if prewarm_task is not None and not prewarm_task.done():
             prewarm_task.cancel()
+        if prewarm_task is not None:
+            await asyncio.gather(prewarm_task, return_exceptions=True)
         self._prewarm_failed.discard(call_id)
 
     def _on_dtmf_event(self, call: CallSession, digit: str) -> None:
