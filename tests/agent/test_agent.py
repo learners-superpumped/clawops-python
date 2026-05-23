@@ -1,4 +1,7 @@
 # tests/agent/test_agent.py
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from clawops.agent import ClawOpsAgent
 from clawops.agent.pipeline.realtime._openai import OpenAIRealtime
@@ -85,6 +88,68 @@ def test_agent_missing_session():
             account_id="AC_test",
             from_="07012341234",
         )
+
+
+@pytest.mark.asyncio
+async def test_outbound_ready_triggers_prewarm():
+    """outbound_ready 이벤트 수신 시 session.prewarm() 이 백그라운드로 시작된다."""
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock()
+    session_mock.attach = AsyncMock()
+    session_mock.start = AsyncMock()
+    session_mock.stop = AsyncMock()
+
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        session=session_mock,
+    )
+
+    # 미리 active_session 등록 (call() 메서드 우회)
+    from clawops.agent._session import CallSession
+
+    call = CallSession(
+        call_id="C1",
+        from_number="07012341234",
+        to_number="07099998888",
+        account_id="AC_test",
+        direction="outbound",
+    )
+    agent._active_sessions["C1"] = call
+
+    # _safe_start_call_session 은 실제 media WS 연결을 시도하므로 stub 으로 대체.
+    agent._safe_start_call_session = AsyncMock()  # type: ignore[method-assign]
+
+    await agent._handle_outbound_ready({"callId": "C1", "mediaUrl": "wss://media/C1"})
+    # prewarm task 가 등록되어야 함
+    assert "C1" in agent._prewarm_tasks
+    # event loop 한 번 돌려 task 시작 보장
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    session_mock.prewarm.assert_awaited_once()
+
+    # cleanup
+    task = agent._prewarm_tasks.get("C1")
+    if task and not task.done():
+        task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_prewarm_failure_marks_call_failed():
+    """prewarm 실패 시 _prewarm_failed 셋에 등록된다."""
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock(side_effect=RuntimeError("boom"))
+
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        session=session_mock,
+    )
+
+    await agent._prewarm_session("C2")
+    assert "C2" in agent._prewarm_failed
 
 
 def test_agent_rejects_invalid_gain():
