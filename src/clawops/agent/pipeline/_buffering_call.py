@@ -63,21 +63,27 @@ class _BufferingCall:
         return out
 
 
-async def drain_into(prev: Any, call: "CallSession") -> None:
+async def drain_into(prev: Any, call: "CallSession") -> bool:
     """`prev` 가 `_BufferingCall` 이면 누적 버퍼/이벤트를 `call` 로 flush.
 
     OpenAI / Gemini / PipelineSession 의 `attach()` 가 공통으로 호출하는 헬퍼.
     `prev` 가 BufferingCall 이 아니면 (예: 두 번째 attach, 또는 prewarm 생략 경로)
     no-op.
+
+    반환값: 버퍼에서 audio chunk 를 한 개 이상 flush 했으면 True. 호출 측 Session
+    은 이 결과로 `_prewarm_first_audio_logged` 를 갱신하여, prewarm 미응답
+    (drained empty) 케이스에서 첫 실시간 audio.delta 송출 시 PREWARM-T first-audio
+    마커를 한 번 더 찍어야 할지 결정한다.
     """
     if not isinstance(prev, _BufferingCall):
-        return
+        return False
 
     drained = prev.drain_buffer()
+    flushed = bool(drained)
     if drained:
         log.info(
             f"[PREWARM-T] first-audio call_id={getattr(call, 'call_id', '?')} "
-            f"t={_time.monotonic():.3f} buffered_chunks={len(drained)}"
+            f"t={_time.monotonic():.3f} buffered_chunks={len(drained)} source=prebuffer"
         )
     for chunk in drained:
         await call.send_audio(chunk)
@@ -88,3 +94,15 @@ async def drain_into(prev: Any, call: "CallSession") -> None:
             f"[PREWARM] dropped events during prewarm "
             f"call_id={getattr(call, 'call_id', '?')} events={dropped}"
         )
+    return flushed
+
+
+def log_first_realtime_audio(call: Any) -> None:
+    """prewarm prebuffer 가 비었던 케이스에서 첫 실시간 audio chunk 송출 시 호출.
+
+    호출자(Session)는 attach 시 받은 drain_into 반환값과 자체 플래그로 한 번만 호출하도록
+    가드한다."""
+    log.info(
+        f"[PREWARM-T] first-audio call_id={getattr(call, 'call_id', '?')} "
+        f"t={_time.monotonic():.3f} buffered_chunks=0 source=realtime"
+    )

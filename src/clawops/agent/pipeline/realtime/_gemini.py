@@ -171,6 +171,7 @@ class GeminiRealtime:
         self._llm_span: Any | None = None
         self._audio_remainder: bytes = b""  # 160B 미만 잔여 ulaw 버퍼
         self._hold_audio_chunks: list[bytes] | None = None
+        self._first_audio_logged: bool = False
 
     def set_hold_audio(self, chunks: list[bytes]) -> None:
         """Tool 실행 중 재생할 hold audio 청크를 설정한다."""
@@ -244,6 +245,7 @@ class GeminiRealtime:
 
         self._call = _BufferingCall()
         self._audio_remainder = b""
+        self._first_audio_logged = False
         self._sent_audio_chunks = 0
 
         self._llm_span_ctx = llm_session_span(self._model, system="google", voice=self._voice)
@@ -273,7 +275,9 @@ class GeminiRealtime:
 
         prev = self._call
         self._call = call
-        await drain_into(prev, call)
+        flushed = await drain_into(prev, call)
+        if flushed:
+            self._first_audio_logged = True
 
     async def start(self, call: CallSession) -> None:
         """기존 호환 경로 — prewarm + attach wrapper."""
@@ -404,6 +408,10 @@ class GeminiRealtime:
         chunk_size = 160
         full_end = (len(ulaw) // chunk_size) * chunk_size
         for off in range(0, full_end, chunk_size):
+            if not self._first_audio_logged:
+                from .._buffering_call import log_first_realtime_audio
+                log_first_realtime_audio(self._call)
+                self._first_audio_logged = True
             await self._call.send_audio(ulaw[off : off + chunk_size])
         self._audio_remainder = ulaw[full_end:]
 

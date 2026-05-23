@@ -129,6 +129,9 @@ class OpenAIRealtime:
         self._hold_audio_chunks: list[bytes] | None = None
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
+        # PREWARM-T first-audio 마커를 한 번만 emit 하기 위한 가드.
+        # drain_into 가 prebuffer 를 flush 한 케이스 / 비어있던 케이스 모두 한 번씩.
+        self._first_audio_logged: bool = False
 
     def set_hold_audio(self, chunks: list[bytes]) -> None:
         """Tool 실행 중 재생할 hold audio 청크를 설정한다."""
@@ -180,6 +183,7 @@ class OpenAIRealtime:
 
         self._call = _BufferingCall()
         self._latest_media_ts = 0
+        self._first_audio_logged = False
 
         # Start LLM session span
         self._llm_span_ctx = llm_session_span(self._config.model, voice=self._config.voice)
@@ -230,7 +234,9 @@ class OpenAIRealtime:
 
         prev = self._call
         self._call = call
-        await drain_into(prev, call)
+        flushed = await drain_into(prev, call)
+        if flushed:
+            self._first_audio_logged = True
 
     async def start(self, call: CallSession) -> None:
         """기존 호환 경로 — prewarm + attach 의 thin wrapper."""
@@ -301,6 +307,10 @@ class OpenAIRealtime:
             chunk_size = 160
             full_end = (len(ulaw) // chunk_size) * chunk_size
             for off in range(0, full_end, chunk_size):
+                if not self._first_audio_logged:
+                    from .._buffering_call import log_first_realtime_audio
+                    log_first_realtime_audio(self._call)
+                    self._first_audio_logged = True
                 await self._call.send_audio(ulaw[off : off + chunk_size])
                 pb.sent_chunks += 1
             pb.audio_remainder = ulaw[full_end:]

@@ -77,6 +77,7 @@ class PipelineSession:
         self._running = False
         self._tasks: list[asyncio.Task[Any]] = []
         self._current_response_task: asyncio.Task[Any] | None = None
+        self._first_audio_logged: bool = False
         self._sent_audio_chunks = 0
         self._pending_respond_task: asyncio.Task[Any] | None = None
         self._hold_audio_chunks: list[bytes] | None = None
@@ -130,6 +131,7 @@ class PipelineSession:
         from ._buffering_call import _BufferingCall
 
         self._call = _BufferingCall()
+        self._first_audio_logged = False
         self._running = True
         self._messages = [{"role": "system", "content": self._system_prompt}]
         self._tasks.append(asyncio.create_task(self._stt_loop()))
@@ -143,7 +145,9 @@ class PipelineSession:
 
         prev = self._call
         self._call = call
-        await drain_into(prev, call)
+        flushed = await drain_into(prev, call)
+        if flushed:
+            self._first_audio_logged = True
 
     async def start(self, call: CallSession) -> None:
         """기존 호환 경로 — prewarm + attach wrapper."""
@@ -306,6 +310,10 @@ class PipelineSession:
                     chunk = ulaw[off : off + 160]
                     if len(chunk) < 160:
                         chunk = chunk + b"\xff" * (160 - len(chunk))
+                    if not self._first_audio_logged:
+                        from ._buffering_call import log_first_realtime_audio
+                        log_first_realtime_audio(self._call)
+                        self._first_audio_logged = True
                     await self._call.send_audio(chunk)
                     self._sent_audio_chunks += 1
 
