@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.27.1 (2026-05-26)
+
+### Fixed
+- `clawops[openai]` extra 가 `openai>=2.0.0` 만 설치하여 OpenAI Realtime 사용 시 `You need to install openai[realtime]` 오류가 발생하던 문제 수정 — extra 를 `openai[realtime]>=2.0.0` 로 변경하여 websocket 전송 의존성을 함께 설치한다.
+
 ## 0.27.0 (2026-05-26)
 
 ### Added

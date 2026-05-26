@@ -48,12 +48,13 @@ dev = [
     "ruff>=0.1",
     "aiohttp>=3.9.0,<4",
     "google-genai>=1.60.0",
-    "openai>=2.0.0",
+    "openai[realtime]>=2.0.0",
 ]
 
 # Agent
 agent = ["aiohttp>=3.9.0,<4"]
-openai = ["clawops[agent]", "openai>=2.0.0"]
+# OpenAI Realtime 은 websocket 전송을 위해 openai[realtime] extra 가 필요하다.
+openai = ["clawops[agent]", "openai[realtime]>=2.0.0"]
 anthropic-llm = ["clawops[agent]", "anthropic>=0.40.0"]
 gemini = ["clawops[agent]", "google-genai>=1.60.0"]
 ollama = ["clawops[agent]", "openai>=1.0.0"]
