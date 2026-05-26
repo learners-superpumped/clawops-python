@@ -161,7 +161,9 @@ class GeminiRealtime:
         self._client = genai.Client(api_key=api_key) if api_key else genai.Client()
         self._live_ctx: Any | None = None  # async context manager
         self._session: Any | None = None  # AsyncLiveSession
-        self._call: CallSession | None = None
+        from .._buffering_call import _BufferingCall as _BC
+
+        self._call: CallSession | _BC | None = None
         self._sent_audio_chunks: int = 0
         self._pending_tool_call: Any | None = None
         self._tasks: list[asyncio.Task[Any]] = []
@@ -169,6 +171,7 @@ class GeminiRealtime:
         self._llm_span: Any | None = None
         self._audio_remainder: bytes = b""  # 160B 미만 잔여 ulaw 버퍼
         self._hold_audio_chunks: list[bytes] | None = None
+        self._first_audio_logged: bool = False
 
     def set_hold_audio(self, chunks: list[bytes]) -> None:
         """Tool 실행 중 재생할 hold audio 청크를 설정한다."""
@@ -201,13 +204,8 @@ class GeminiRealtime:
             "builtinTools": [],
         }
 
-    async def start(self, call: CallSession) -> None:
-        self._call = call
-
-        self._llm_span_ctx = llm_session_span(self._model, system="google", voice=self._voice)
-        self._llm_span = self._llm_span_ctx.__enter__()
-
-        # ── Config ──
+    async def _open_live_session(self) -> Any:
+        """Gemini Live 세션을 열어 핸들을 반환한다. 테스트 mocking 지점."""
         tool_schemas = self._build_tool_schemas()
 
         config: dict[str, Any] = {
@@ -235,13 +233,26 @@ class GeminiRealtime:
         log.debug("Gemini SDK final config: %s", config)
         log.debug(f"Gemini SDK tool count: {len(tool_schemas)}")
 
-        # SDK가 setup 메시지를 자동으로 처리
         self._live_ctx = self._client.aio.live.connect(
             model=self._model,
             config=config,
         )
+        return await self._live_ctx.__aenter__()
+
+    async def prewarm(self) -> None:
+        """Gemini Live 세션 prewarm — CallSession 없이 호출 가능."""
+        from .._buffering_call import _BufferingCall
+
+        self._call = _BufferingCall()
+        self._audio_remainder = b""
+        self._first_audio_logged = False
+        self._sent_audio_chunks = 0
+
+        self._llm_span_ctx = llm_session_span(self._model, system="google", voice=self._voice)
+        self._llm_span = self._llm_span_ctx.__enter__()
+
         try:
-            self._session = await self._live_ctx.__aenter__()
+            self._session = await self._open_live_session()
         except Exception:
             if self._llm_span_ctx:
                 import sys
@@ -249,7 +260,7 @@ class GeminiRealtime:
                 self._llm_span_ctx.__exit__(*sys.exc_info())
                 self._llm_span_ctx = None
             raise
-        log.info("Gemini Live SDK session connected")
+        log.info("Gemini Live SDK session connected (prewarm)")
 
         if self._greeting:
             await self._session.send_realtime_input(
@@ -257,6 +268,21 @@ class GeminiRealtime:
             )
 
         self._tasks.append(asyncio.create_task(self._receive_loop()))
+
+    async def attach(self, call: CallSession) -> None:
+        """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush."""
+        from .._buffering_call import drain_into
+
+        prev = self._call
+        self._call = call
+        flushed = await drain_into(prev, call)
+        if flushed:
+            self._first_audio_logged = True
+
+    async def start(self, call: CallSession) -> None:
+        """기존 호환 경로 — prewarm + attach wrapper."""
+        await self.prewarm()
+        await self.attach(call)
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
         if not self._session:
@@ -382,6 +408,10 @@ class GeminiRealtime:
         chunk_size = 160
         full_end = (len(ulaw) // chunk_size) * chunk_size
         for off in range(0, full_end, chunk_size):
+            if not self._first_audio_logged:
+                from .._buffering_call import log_first_realtime_audio
+                log_first_realtime_audio(self._call)
+                self._first_audio_logged = True
             await self._call.send_audio(ulaw[off : off + chunk_size])
         self._audio_remainder = ulaw[full_end:]
 
@@ -473,17 +503,26 @@ class GeminiRealtime:
         return declarations
 
     async def stop(self) -> None:
-        for task in self._tasks:
+        # cancel 후 gather 로 수거 — 안 하면 receive loop 의 예외가 retrieve 되지 않아
+        # "Task exception was never retrieved" 경고가 발생한다 (특히 prewarm 창이 길 때).
+        current = asyncio.current_task()
+        pending = [t for t in self._tasks if t is not current]
+        for task in pending:
             if not task.done():
                 task.cancel()
         self._tasks.clear()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         await self._cleanup()
 
     async def _cleanup(self) -> None:
         if self._live_ctx:
             try:
-                await self._live_ctx.__aexit__(None, None, None)
-            except Exception as e:
+                await asyncio.wait_for(
+                    self._live_ctx.__aexit__(None, None, None),
+                    timeout=2.0,
+                )
+            except (asyncio.TimeoutError, Exception) as e:
                 log.debug(f"Gemini SDK cleanup: {e}")
             self._live_ctx = None
             self._session = None

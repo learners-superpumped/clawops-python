@@ -118,7 +118,9 @@ class OpenAIRealtime:
         self._builtin_tools: set[BuiltinTool] | None = None
         self._client: AsyncOpenAI | None = None
         self._connection: AsyncRealtimeConnection | None = None
-        self._call: CallSession | None = None
+        from .._buffering_call import _BufferingCall as _BC
+
+        self._call: CallSession | _BC | None = None
         self._playback: _PlaybackState | None = None  # 현재 재생 중인 응답 상태
         self._latest_media_ts: int = 0
         self._recorder = recorder
@@ -127,6 +129,9 @@ class OpenAIRealtime:
         self._hold_audio_chunks: list[bytes] | None = None
         self._llm_span_ctx: Any | None = None
         self._llm_span: Any | None = None
+        # PREWARM-T first-audio 마커를 한 번만 emit 하기 위한 가드.
+        # drain_into 가 prebuffer 를 flush 한 케이스 / 비어있던 케이스 모두 한 번씩.
+        self._first_audio_logged: bool = False
 
     def set_hold_audio(self, chunks: list[bytes]) -> None:
         """Tool 실행 중 재생할 hold audio 청크를 설정한다."""
@@ -159,17 +164,33 @@ class OpenAIRealtime:
             "builtinTools": [],
         }
 
-    async def start(self, call: CallSession) -> None:
-        self._call = call
+    async def _open_connection(self) -> AsyncRealtimeConnection:
+        """OpenAI Realtime WS 를 열어 connection 핸들을 반환한다.
+
+        테스트에서 mocking 하기 위해 별도 메서드로 추출.
+        """
+        self._client = AsyncOpenAI(api_key=self._config.openai_api_key)
+        manager = self._client.realtime.connect(model=self._config.model)
+        return await manager.enter()
+
+    async def prewarm(self) -> None:
+        """LLM WS 연결 + session.update + (옵션) response.create 만 수행한다.
+
+        CallSession 없이 호출 가능. attach() 가 호출되기 전까지 도착하는
+        audio delta 는 _BufferingCall 의 메모리 버퍼에 누적된다.
+        """
+        from .._buffering_call import _BufferingCall  # local import: 순환 회피
+
+        self._call = _BufferingCall()
+        self._latest_media_ts = 0
+        self._first_audio_logged = False
 
         # Start LLM session span
         self._llm_span_ctx = llm_session_span(self._config.model, voice=self._config.voice)
         self._llm_span = self._llm_span_ctx.__enter__()
 
-        self._client = AsyncOpenAI(api_key=self._config.openai_api_key)
-        manager = self._client.realtime.connect(model=self._config.model)
-        self._connection = await manager.enter()
-        log.info("OpenAI Realtime connected")
+        self._connection = await self._open_connection()
+        log.info("OpenAI Realtime connected (prewarm)")
 
         tool_schemas = self._tools.to_openai_tools()
         tool_schemas.extend(get_builtin_tool_schemas(self._builtin_tools, fmt="realtime"))
@@ -203,6 +224,24 @@ class OpenAIRealtime:
             await self._connection.response.create()
 
         self._tasks.append(asyncio.create_task(self._receive_loop()))
+
+    async def attach(self, call: CallSession) -> None:
+        """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush.
+
+        prewarm() 이 선행되어 있어야 한다. start() 는 prewarm+attach wrapper.
+        """
+        from .._buffering_call import drain_into
+
+        prev = self._call
+        self._call = call
+        flushed = await drain_into(prev, call)
+        if flushed:
+            self._first_audio_logged = True
+
+    async def start(self, call: CallSession) -> None:
+        """기존 호환 경로 — prewarm + attach 의 thin wrapper."""
+        await self.prewarm()
+        await self.attach(call)
 
     async def feed_audio(self, audio: bytes, timestamp: int) -> None:
         self._latest_media_ts = timestamp
@@ -268,6 +307,10 @@ class OpenAIRealtime:
             chunk_size = 160
             full_end = (len(ulaw) // chunk_size) * chunk_size
             for off in range(0, full_end, chunk_size):
+                if not self._first_audio_logged:
+                    from .._buffering_call import log_first_realtime_audio
+                    log_first_realtime_audio(self._call)
+                    self._first_audio_logged = True
                 await self._call.send_audio(ulaw[off : off + chunk_size])
                 pb.sent_chunks += 1
             pb.audio_remainder = ulaw[full_end:]
@@ -418,23 +461,33 @@ class OpenAIRealtime:
     async def stop(self) -> None:
         # 1) 연결 닫기 → receive loop의 async for가 자연 종료
         if self._connection:
-            await self._connection.close()
+            try:
+                await asyncio.wait_for(self._connection.close(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                log.warning(f"OpenAI Realtime connection close error: {e}")
             self._connection = None
-        # 2) 남은 태스크 정리
-        for task in self._tasks:
+        # 2) 남은 태스크 정리 — cancel 후 gather 로 수거한다.
+        #    cancel 만 하고 await 하지 않으면 receive loop 등의 예외가 retrieve 되지 않아
+        #    "Task exception was never retrieved" 경고가 발생한다 (특히 prewarm 창이 길 때).
+        #    현재 실행 중인 task 가 목록에 있으면 self-await 가 되므로 제외한다.
+        current = asyncio.current_task()
+        pending = [t for t in (*self._tasks, *self._pending_tool_tasks) if t is not current]
+        for task in pending:
             if not task.done():
                 task.cancel()
         self._tasks.clear()
-        for task in self._pending_tool_tasks:
-            if not task.done():
-                task.cancel()
         self._pending_tool_tasks.clear()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         # 3) LLM span 종료
         self._close_llm_span()
 
     async def _cleanup(self) -> None:
         if self._connection:
-            await self._connection.close()
+            try:
+                await asyncio.wait_for(self._connection.close(), timeout=2.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                log.warning(f"OpenAI Realtime connection cleanup error: {e}")
             self._connection = None
         self._close_llm_span()
 

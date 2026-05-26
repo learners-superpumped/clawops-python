@@ -10,6 +10,7 @@ import logging
 import math
 import os
 import signal
+import time
 from typing import Any, Callable, Awaitable, TypedDict
 
 from .._exceptions import AgentError
@@ -55,6 +56,7 @@ class ClawOpsAgent:
         tool_config: ToolConfig | None = None,
         rx_gain: float = 1.0,
         tx_gain: float = 1.0,
+        prewarm_enabled: bool = True,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("CLAWOPS_API_KEY")
@@ -81,6 +83,7 @@ class ClawOpsAgent:
         self._tracing = tracing
         self._rx_gain = self._validate_gain("rx_gain", rx_gain)
         self._tx_gain = self._validate_gain("tx_gain", tx_gain)
+        self._prewarm_enabled = prewarm_enabled
 
         if self._tracing is not None:
             setup_tracing(self._tracing)
@@ -100,6 +103,13 @@ class ClawOpsAgent:
         self._active_sessions: dict[str, CallSession] = {}
         self._control_ws: ControlWebSocket | None = None
         self._control_ws_task: asyncio.Task[Any] | None = None
+        # prewarm 추적 — outbound_ready 수신 시 session.prewarm() 을 백그라운드 task 로
+        # 시작하고, _start_call_session 이 await + attach() 로 부착한다.
+        self._prewarm_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._prewarm_failed: set[str] = set()
+        # attach 완료된 callId — 이후의 stop() 은 정상 종료 경로가 책임진다.
+        # cleanup 이 attached 통화에 중복 stop() 하지 않도록 가드한다.
+        self._prewarm_attached: set[str] = set()
 
     @staticmethod
     def _validate_gain(name: str, gain: float) -> float:
@@ -217,6 +227,16 @@ class ClawOpsAgent:
 
         self._active_sessions[call_session.call_id] = call_session
         log.info(f"Outbound call initiated: {self._from_number} -> {to} ({call_session.call_id})")
+
+        # originate 직후 prewarm 을 시작한다 — ring 구간(answer 이전)에 LLM 연결 +
+        # greeting 생성을 흡수해 answer→first-audio latency 를 줄인다. call.ringing
+        # 이벤트는 트렁크가 SIP 18x 를 안 올리면 도착하지 않을 수 있어 신뢰하지 않는다.
+        # ringing/outbound_ready 핸들러의 prewarm 시작은 이 시점을 놓쳤을 때의 fallback.
+        if self._prewarm_enabled and call_session.call_id not in self._prewarm_tasks:
+            self._prewarm_tasks[call_session.call_id] = asyncio.create_task(
+                self._prewarm_session(call_session.call_id)
+            )
+
         return call_session
 
     async def _handle_incoming(self, data: dict[str, Any]) -> None:
@@ -364,7 +384,34 @@ class ClawOpsAgent:
             self._call_sessions[call.call_id] = session
 
             await call._emit("call_start")
-            await session.start(call)
+
+            # prewarm task 가 있으면 await 후 attach(), 없거나 실패면 기존 start() 경로.
+            prewarm_task = self._prewarm_tasks.pop(call.call_id, None)
+            prewarm_failed = call.call_id in self._prewarm_failed
+            self._prewarm_failed.discard(call.call_id)
+            if prewarm_task is not None and not prewarm_failed:
+                try:
+                    await prewarm_task
+                    log.info(
+                        f"[PREWARM-T] attach call_id={call.call_id} t={time.monotonic():.3f}"
+                    )
+                    await session.attach(call)
+                    # attach 완료 — 이후 stop() 은 이 경로(finally)가 책임진다.
+                    # _handle_ended/_handle_failed 의 cleanup 이 중복 stop() 하지 않도록 표시.
+                    self._prewarm_attached.add(call.call_id)
+                except Exception as e:
+                    log.warning(f"prewarm await/attach failed, falling back to start: {e}")
+                    # cancel + 명시적 수거 (B4: leak/warning 방지)
+                    if not prewarm_task.done():
+                        prewarm_task.cancel()
+                    await asyncio.gather(prewarm_task, return_exceptions=True)
+                    await session.start(call)
+            else:
+                if prewarm_task is not None and not prewarm_task.done():
+                    prewarm_task.cancel()
+                if prewarm_task is not None:
+                    await asyncio.gather(prewarm_task, return_exceptions=True)
+                await session.start(call)
 
             # Send call telemetry (best-effort)
             telemetry = session.get_telemetry() if hasattr(session, "get_telemetry") else None
@@ -412,6 +459,7 @@ class ClawOpsAgent:
                 call._mark_ended()
                 self._active_sessions.pop(call.call_id, None)
                 self._call_sessions.pop(call.call_id, None)
+                self._prewarm_attached.discard(call.call_id)
 
     async def _on_media_start(self, call: CallSession, info: dict[str, Any]) -> None:
         log.info(f"Media stream started: {call.call_id}")
@@ -445,7 +493,34 @@ class ClawOpsAgent:
             return
         call.status = "in-progress"
         log.info(f"Outbound call answered: {call.from_number} -> {call.to_number} ({call_id})")
+
+        # prewarm 은 보통 _handle_ringing(ring 구간)에서 이미 시작됐다. 여기서는
+        # ringing 이벤트가 오지 않은 경우의 fallback 으로만 시작한다.
+        # _start_call_session 이 prewarm task 를 await 후 attach() 로 부착한다.
+        # prewarm_enabled=False 면 기존 start() 경로로 동작.
+        if self._prewarm_enabled and call_id not in self._prewarm_tasks:
+            self._prewarm_tasks[call_id] = asyncio.create_task(
+                self._prewarm_session(call_id)
+            )
+
         asyncio.create_task(self._safe_start_call_session(call, media_url))
+
+    async def _prewarm_session(self, call_id: str) -> None:
+        """outbound_ready 시점에 LLM WS 를 미리 연결한다.
+
+        실패/timeout 시 _prewarm_failed 에 등록하여 _start_call_session 이
+        기존 start() 경로로 fallback 한다.
+        """
+        t0 = time.monotonic()
+        log.info(f"[PREWARM-T] start call_id={call_id} t={t0:.3f}")
+        try:
+            await asyncio.wait_for(self._session.prewarm(), timeout=10.0)
+            log.info(
+                f"[PREWARM-T] done call_id={call_id} elapsed_ms={(time.monotonic() - t0) * 1000:.0f}"
+            )
+        except Exception as e:
+            log.warning(f"[PREWARM-T] failed call_id={call_id} err={e}")
+            self._prewarm_failed.add(call_id)
 
     async def _handle_ringing(self, data: dict[str, Any]) -> None:
         call_id = data.get("callId", "")
@@ -453,6 +528,36 @@ class ClawOpsAgent:
         if call:
             call.status = "ringing"
             log.info(f"Outbound call ringing: {call_id}")
+
+            # ring 구간(answer 이전)에 prewarm 을 미리 시작한다 — LLM WS 연결 +
+            # greeting 생성을 ring 시간으로 흡수해 answer→first-audio latency 를 줄인다.
+            # outbound_ready 에서의 prewarm 시작은 ringing 이 안 온 경우의 fallback.
+            if self._prewarm_enabled and call_id not in self._prewarm_tasks:
+                self._prewarm_tasks[call_id] = asyncio.create_task(
+                    self._prewarm_session(call_id)
+                )
+
+    async def _cleanup_prewarm(self, call_id: str) -> None:
+        """attach 전에 hangup/실패가 발생한 prewarm 세션을 정리한다 (LLM WS leak 방지).
+
+        prewarm task 를 수거한 뒤, 아직 attach 되지 않았으면 session.stop() 으로
+        열린 연결과 receive 루프를 닫는다. 이미 attach 된 통화면 정상 종료 경로
+        (_start_call_session finally)가 stop() 을 책임지므로 중복 호출하지 않는다.
+        """
+        prewarm_task = self._prewarm_tasks.pop(call_id, None)
+        attached = call_id in self._prewarm_attached
+        self._prewarm_failed.discard(call_id)
+        self._prewarm_attached.discard(call_id)
+        if prewarm_task is None or attached:
+            return
+        if not prewarm_task.done():
+            prewarm_task.cancel()
+        await asyncio.gather(prewarm_task, return_exceptions=True)
+        # prewarm 이 이미 연결을 열었으면 task cancel 만으로는 닫히지 않는다 — stop() 필요.
+        try:
+            await self._session.stop()
+        except Exception as e:
+            log.warning(f"prewarm cleanup stop() failed for {call_id}: {e}")
 
     async def _handle_failed(self, data: dict[str, Any]) -> None:
         call_id = data.get("callId", "")
@@ -464,6 +569,7 @@ class ClawOpsAgent:
             await call._emit("call_failed", reason)
             call._mark_ended()
             self._active_sessions.pop(call_id, None)
+        await self._cleanup_prewarm(call_id)
 
     async def _handle_ended(self, data: dict[str, Any]) -> None:
         call_id = data.get("callId", "")
@@ -473,6 +579,7 @@ class ClawOpsAgent:
             call._mark_ended()
         self._active_sessions.pop(call_id, None)
         self._call_sessions.pop(call_id, None)
+        await self._cleanup_prewarm(call_id)
 
     def _on_dtmf_event(self, call: CallSession, digit: str) -> None:
         """DTMF 수신 시 호출. collector 또는 패시브 모드로 라우팅."""

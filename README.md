@@ -50,6 +50,35 @@ async def on_start(call):
 asyncio.run(agent.serve())  # Ctrl+C로 종료
 ```
 
+### Outbound 발신 Prewarm (낮은 첫 음성 latency)
+
+outbound 통화에서 상대 응답 직후 첫 음성까지의 지연을 줄이기 위해, ClawOpsAgent 는
+control WS 의 `call.outbound_ready` 이벤트 수신 즉시 LLM WebSocket 을 미리 연결하고
+첫 audio delta 를 메모리에 누적한다 (prewarm + first-audio prebuffer). media WS 가 연결되면
+누적된 chunk 를 flush 하여 사용자가 첫 음성을 빠르게 듣게 한다.
+
+```python
+agent = ClawOpsAgent(
+    from_="07012341234",
+    session=OpenAIRealtime(system_prompt="..."),
+    prewarm_enabled=True,  # default True
+)
+```
+
+비용/효과 검증 단계에서는 `prewarm_enabled=False` 로 비활성화 가능하다.
+측정 스크립트: `scripts/measure_prewarm_cost.py` (PREWARM-T 로그 파싱).
+
+**한계 / 비목표**
+
+- **동시 outbound 통화 1건 가정** — ClawOpsAgent 1 인스턴스의 `session` 객체는 prewarm 시
+  단일 `_BufferingCall` 을 공유한다. 같은 인스턴스로 동시 outbound 통화를 발신하면 prewarm
+  race 가 발생할 수 있다. 다중 동시 outbound 가 필요하면 통화별로 별도 ClawOpsAgent 인스턴스를
+  사용하거나, session factory 패턴 도입이 필요하다 (후속 과제).
+- **Session 타입별 효과 차이** — Realtime (OpenAI / Gemini) 에서 LLM WS handshake +
+  session.update 가 prewarm 으로 숨겨지므로 latency 절감 효과가 가장 크다. 반면
+  `PipelineSession` 은 STT / LLM / TTS 가 lazy 연결되므로, prewarm 단계에서는 STT 루프 기동과
+  greeting kickoff 정도만 선행되어 latency 절감 효과가 제한적이다.
+
 ### Call Transfer (통화 전환)
 
 AI가 통화 중 다른 번호로 전환할 수 있습니다. Blind(즉시)와 Warm(안내 후) 모드를 지원합니다.

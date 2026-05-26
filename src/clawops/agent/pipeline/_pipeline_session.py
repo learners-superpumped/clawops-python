@@ -69,12 +69,15 @@ class PipelineSession:
         self._language = language
         self._recorder = recorder
 
-        self._call: CallSession | None = None
+        from ._buffering_call import _BufferingCall as _BC
+
+        self._call: CallSession | _BC | None = None
         self._messages: list[dict[str, Any]] = []
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._running = False
         self._tasks: list[asyncio.Task[Any]] = []
         self._current_response_task: asyncio.Task[Any] | None = None
+        self._first_audio_logged: bool = False
         self._sent_audio_chunks = 0
         self._pending_respond_task: asyncio.Task[Any] | None = None
         self._hold_audio_chunks: list[bytes] | None = None
@@ -119,14 +122,37 @@ class PipelineSession:
             "builtinTools": [],
         }
 
-    async def start(self, call: CallSession) -> None:
-        self._call = call
+    async def prewarm(self) -> None:
+        """PipelineSession prewarm — CallSession 없이 호출 가능.
+
+        STT/LLM/TTS 자원은 lazy 이므로 BufferingCall 만 세팅하고
+        greeting trigger 가 있으면 TTS 합성을 미리 시작한다.
+        """
+        from ._buffering_call import _BufferingCall
+
+        self._call = _BufferingCall()
+        self._first_audio_logged = False
         self._running = True
         self._messages = [{"role": "system", "content": self._system_prompt}]
         self._tasks.append(asyncio.create_task(self._stt_loop()))
         if self._greeting:
             self._tasks.append(asyncio.create_task(self._generate_greeting()))
-        log.info("PipelineSession started")
+        log.info("PipelineSession prewarmed")
+
+    async def attach(self, call: CallSession) -> None:
+        """prewarmed 세션에 실제 CallSession 부착 + 버퍼 flush."""
+        from ._buffering_call import drain_into
+
+        prev = self._call
+        self._call = call
+        flushed = await drain_into(prev, call)
+        if flushed:
+            self._first_audio_logged = True
+
+    async def start(self, call: CallSession) -> None:
+        """기존 호환 경로 — prewarm + attach wrapper."""
+        await self.prewarm()
+        await self.attach(call)
 
     async def feed_audio(self, ulaw: bytes, timestamp: int) -> None:
         if not self._running:
@@ -284,6 +310,10 @@ class PipelineSession:
                     chunk = ulaw[off : off + 160]
                     if len(chunk) < 160:
                         chunk = chunk + b"\xff" * (160 - len(chunk))
+                    if not self._first_audio_logged:
+                        from ._buffering_call import log_first_realtime_audio
+                        log_first_realtime_audio(self._call)
+                        self._first_audio_logged = True
                     await self._call.send_audio(chunk)
                     self._sent_audio_chunks += 1
 
