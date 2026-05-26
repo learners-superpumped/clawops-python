@@ -503,10 +503,16 @@ class GeminiRealtime:
         return declarations
 
     async def stop(self) -> None:
-        for task in self._tasks:
+        # cancel 후 gather 로 수거 — 안 하면 receive loop 의 예외가 retrieve 되지 않아
+        # "Task exception was never retrieved" 경고가 발생한다 (특히 prewarm 창이 길 때).
+        current = asyncio.current_task()
+        pending = [t for t in self._tasks if t is not current]
+        for task in pending:
             if not task.done():
                 task.cancel()
         self._tasks.clear()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         await self._cleanup()
 
     async def _cleanup(self) -> None:

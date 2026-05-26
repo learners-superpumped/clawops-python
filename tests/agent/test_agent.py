@@ -1,6 +1,6 @@
 # tests/agent/test_agent.py
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from clawops.agent import ClawOpsAgent
@@ -136,6 +136,142 @@ async def test_outbound_ready_triggers_prewarm():
 
 
 @pytest.mark.asyncio
+async def test_ringing_triggers_prewarm():
+    """call.ringing 수신 시 session.prewarm() 이 ring 구간에 미리 시작된다.
+
+    prewarm 의 목적(answer 전 LLM 연결 + greeting 생성을 ring 시간으로 흡수)을
+    달성하려면 outbound_ready(answer) 가 아니라 ringing 시점에 시작해야 한다.
+    """
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock()
+    session_mock.attach = AsyncMock()
+    session_mock.start = AsyncMock()
+    session_mock.stop = AsyncMock()
+
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        session=session_mock,
+    )
+
+    from clawops.agent._session import CallSession
+
+    call = CallSession(
+        call_id="CR1",
+        from_number="07012341234",
+        to_number="07099998888",
+        account_id="AC_test",
+        direction="outbound",
+    )
+    agent._active_sessions["CR1"] = call
+
+    await agent._handle_ringing({"callId": "CR1"})
+    # ring 시점에 prewarm task 가 등록되어야 함
+    assert "CR1" in agent._prewarm_tasks
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    session_mock.prewarm.assert_awaited_once()
+
+    # cleanup
+    task = agent._prewarm_tasks.get("CR1")
+    if task and not task.done():
+        task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_outbound_ready_does_not_double_prewarm_after_ringing():
+    """ringing 으로 이미 prewarm 이 시작된 경우 outbound_ready 가 두 번째 prewarm 을 만들지 않는다."""
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock()
+    session_mock.attach = AsyncMock()
+    session_mock.start = AsyncMock()
+    session_mock.stop = AsyncMock()
+
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        session=session_mock,
+    )
+    agent._safe_start_call_session = AsyncMock()  # type: ignore[method-assign]
+
+    from clawops.agent._session import CallSession
+
+    call = CallSession(
+        call_id="CR2",
+        from_number="07012341234",
+        to_number="07099998888",
+        account_id="AC_test",
+        direction="outbound",
+    )
+    agent._active_sessions["CR2"] = call
+
+    await agent._handle_ringing({"callId": "CR2"})
+    first_task = agent._prewarm_tasks.get("CR2")
+    await agent._handle_outbound_ready({"callId": "CR2", "mediaUrl": "wss://media/CR2"})
+    # 동일 task 가 유지되어야 함 (재생성 X)
+    assert agent._prewarm_tasks.get("CR2") is first_task
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    session_mock.prewarm.assert_awaited_once()
+
+    # cleanup
+    if first_task and not first_task.done():
+        first_task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_call_starts_prewarm_at_originate():
+    """agent.call() 이 originate(POST 201) 직후 prewarm 을 시작한다.
+
+    ring 구간(answer 이전)을 활용하려면 ringing/outbound_ready 를 기다리지 않고
+    발신 즉시 prewarm 해야 한다 (call.ringing 이 서버에서 안 올 수 있음).
+    """
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock()
+    session_mock.attach = AsyncMock()
+    session_mock.start = AsyncMock()
+    session_mock.stop = AsyncMock()
+
+    agent = ClawOpsAgent(
+        api_key="sk_test",
+        account_id="AC_test",
+        from_="07012341234",
+        session=session_mock,
+    )
+    agent.connect = AsyncMock()  # type: ignore[method-assign]  # control WS 우회
+
+    # aiohttp POST → 201 {"callId": "CO1"} 모킹
+    resp = MagicMock()
+    resp.status = 201
+    resp.json = AsyncMock(return_value={"callId": "CO1"})
+    post_ctx = MagicMock()
+    post_ctx.__aenter__ = AsyncMock(return_value=resp)
+    post_ctx.__aexit__ = AsyncMock(return_value=False)
+    http_session = MagicMock()
+    http_session.post = MagicMock(return_value=post_ctx)
+    session_ctx = MagicMock()
+    session_ctx.__aenter__ = AsyncMock(return_value=http_session)
+    session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("aiohttp.ClientSession", return_value=session_ctx):
+        call = await agent.call("07099998888")
+
+    assert call.call_id == "CO1"
+    # originate 직후 prewarm task 가 등록되어야 함
+    assert "CO1" in agent._prewarm_tasks
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    session_mock.prewarm.assert_awaited_once()
+
+    # cleanup
+    task = agent._prewarm_tasks.get("CO1")
+    if task and not task.done():
+        task.cancel()
+
+
+@pytest.mark.asyncio
 async def test_prewarm_disabled_skips_prewarm():
     """prewarm_enabled=False 면 outbound_ready 수신 시 prewarm task 가 등록되지 않는다."""
     session_mock = MagicMock()
@@ -163,6 +299,53 @@ async def test_prewarm_disabled_skips_prewarm():
     await agent._handle_outbound_ready({"callId": "C3", "mediaUrl": "wss://media/C3"})
     assert "C3" not in agent._prewarm_tasks
     session_mock.prewarm.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_before_attach_stops_prewarmed_session():
+    """attach 전에 call.failed 수신 시 prewarm 된 세션을 stop() 으로 닫는다 (LLM WS leak 방지)."""
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock()
+    session_mock.stop = AsyncMock()
+
+    agent = ClawOpsAgent(
+        api_key="sk_test", account_id="AC_test", from_="07012341234", session=session_mock
+    )
+
+    async def _done():
+        return None
+
+    agent._prewarm_tasks["CF1"] = asyncio.create_task(_done())
+    await asyncio.sleep(0)
+
+    await agent._handle_failed({"callId": "CF1", "reason": "rejected"})
+
+    session_mock.stop.assert_awaited_once()
+    assert "CF1" not in agent._prewarm_tasks
+
+
+@pytest.mark.asyncio
+async def test_ended_after_attach_does_not_stop():
+    """이미 attach 된 통화 종료 시 cleanup 이 stop() 을 중복 호출하지 않는다 (정상 경로가 책임)."""
+    session_mock = MagicMock()
+    session_mock.prewarm = AsyncMock()
+    session_mock.stop = AsyncMock()
+
+    agent = ClawOpsAgent(
+        api_key="sk_test", account_id="AC_test", from_="07012341234", session=session_mock
+    )
+
+    async def _done():
+        return None
+
+    agent._prewarm_tasks["CE1"] = asyncio.create_task(_done())
+    agent._prewarm_attached.add("CE1")
+    await asyncio.sleep(0)
+
+    await agent._handle_ended({"callId": "CE1"})
+
+    session_mock.stop.assert_not_awaited()
+    assert "CE1" not in agent._prewarm_tasks
 
 
 @pytest.mark.asyncio

@@ -466,15 +466,19 @@ class OpenAIRealtime:
             except (asyncio.TimeoutError, Exception) as e:
                 log.warning(f"OpenAI Realtime connection close error: {e}")
             self._connection = None
-        # 2) 남은 태스크 정리
-        for task in self._tasks:
+        # 2) 남은 태스크 정리 — cancel 후 gather 로 수거한다.
+        #    cancel 만 하고 await 하지 않으면 receive loop 등의 예외가 retrieve 되지 않아
+        #    "Task exception was never retrieved" 경고가 발생한다 (특히 prewarm 창이 길 때).
+        #    현재 실행 중인 task 가 목록에 있으면 self-await 가 되므로 제외한다.
+        current = asyncio.current_task()
+        pending = [t for t in (*self._tasks, *self._pending_tool_tasks) if t is not current]
+        for task in pending:
             if not task.done():
                 task.cancel()
         self._tasks.clear()
-        for task in self._pending_tool_tasks:
-            if not task.done():
-                task.cancel()
         self._pending_tool_tasks.clear()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         # 3) LLM span 종료
         self._close_llm_span()
 
