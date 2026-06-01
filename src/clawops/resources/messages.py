@@ -17,7 +17,7 @@ class Messages(SyncAPIResource):
         to: str,
         from_: str,
         body: str,
-        type: Literal["sms", "mms", "rcs", "kakao"] | None = None,
+        type: Literal["sms", "lms", "mms"] | None = None,
         subject: str | None = None,
         media_url: list[str] | None = None,
         extra_headers: dict[str, str] | None = None,
@@ -30,7 +30,7 @@ class Messages(SyncAPIResource):
             to: 수신 번호.
             from_: 발신 번호. 계정에 등록된 번호여야 합니다.
             body: 메시지 본문.
-            type: 메시지 유형. sms, mms, rcs, kakao. 기본값 sms.
+            type: 메시지 유형. sms, lms, mms. 기본값 sms.
             subject: 제목 (MMS 등에서 사용).
             media_url: 첨부 미디어 URL 목록 (MMS 등에서 사용).
             extra_headers: 추가 HTTP 헤더.
@@ -52,7 +52,7 @@ class Messages(SyncAPIResource):
     def list(
         self,
         *,
-        type: Literal["sms", "mms", "rcs", "kakao"] | None = None,
+        type: Literal["sms", "lms", "mms"] | None = None,
         status: Literal["queued", "sending", "sent", "failed", "received"] | None = None,
         page: int | None = None,
         page_size: int | None = None,
@@ -113,7 +113,7 @@ class AsyncMessages(AsyncAPIResource):
     """메시지(Messages) 비동기 리소스. Messages의 async 버전."""
 
     async def create(self, *, to: str, from_: str, body: str,
-                     type: Literal["sms", "mms", "rcs", "kakao"] | None = None,
+                     type: Literal["sms", "lms", "mms"] | None = None,
                      subject: str | None = None,
                      media_url: list[str] | None = None,
                      extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
@@ -128,7 +128,7 @@ class AsyncMessages(AsyncAPIResource):
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
         )
 
-    async def list(self, *, type: Literal["sms", "mms", "rcs", "kakao"] | None = None,
+    async def list(self, *, type: Literal["sms", "lms", "mms"] | None = None,
                    status: Literal["queued", "sending", "sent", "failed", "received"] | None = None,
                    page: int | None = None, page_size: int | None = None,
                    extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
