@@ -71,6 +71,30 @@ class Recordings(SyncAPIResource):
         )
         return _to_download(response)
 
+    def delete(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> None:
+        """통화 녹음을 삭제합니다.
+
+        녹음 포인터를 제거합니다. 멱등이며, 녹음이 이미 없어도 성공합니다.
+
+        Args:
+            call_id: 통화 ID (예: 'CAabcdef1234567890').
+
+        Raises:
+            NotFoundError (404): 통화 없음.
+            PermissionDeniedError (403): accountId 불일치.
+        """
+        self._client._delete(
+            f"{self._base_path}/recordings/{call_id}",
+            extra_headers=extra_headers,
+            timeout=timeout,
+        )
+
 
 class AsyncRecordings(AsyncAPIResource):
     async def download(
@@ -86,3 +110,25 @@ class AsyncRecordings(AsyncAPIResource):
             timeout=timeout,
         )
         return _to_download(response)
+
+    async def delete(
+        self,
+        call_id: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> None:
+        """통화 녹음을 삭제합니다 (비동기).
+
+        Args:
+            call_id: 통화 ID (예: 'CAabcdef1234567890').
+
+        Raises:
+            NotFoundError (404): 통화 없음.
+            PermissionDeniedError (403): accountId 불일치.
+        """
+        await self._client._delete(
+            f"{self._base_path}/recordings/{call_id}",
+            extra_headers=extra_headers,
+            timeout=timeout,
+        )
