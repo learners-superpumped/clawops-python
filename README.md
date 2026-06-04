@@ -261,6 +261,11 @@ for call in page.data:
 
 녹음이 없는 통화(`recording_url is None`)에 호출하면 `NotFoundError(404)` 가 발생합니다.
 
+```python
+# 녹음 삭제 (멱등 — 이미 없어도 성공)
+client.recordings.delete("CAabcdef1234567890")
+```
+
 ### 전화번호 (Numbers)
 
 ```python
