@@ -23,6 +23,7 @@ class Calls(SyncAPIResource):
         status_callback: str | None = None,
         status_callback_event: str | None = None,
         timeout: int | None = None,
+        machine_detection: Literal["Enable", "Hangup"] | None = None,
         extra_headers: dict[str, str] | None = None,
         extra_query: dict[str, object] | None = None,
         timeout_: float | None = None,
@@ -46,6 +47,8 @@ class Calls(SyncAPIResource):
             status_callback: 통화 상태 변경 시 POST 요청을 받을 콜백 URL.
             status_callback_event: 수신할 상태 이벤트 목록 (공백 구분).
             timeout: 발신 타임아웃 (초). 기본값: 60.
+            machine_detection: 자동응답기/음성사서함 감지(AMD). ``"Enable"``=감지 후 ``AnsweredBy``
+                통보(통화 계속), ``"Hangup"``=음성사서함 감지 시 자동 종료. 미설정 시 비활성.
             extra_headers: 추가 HTTP 헤더.
             extra_query: 추가 쿼리 파라미터.
             timeout_: 이 요청의 타임아웃 (초).
@@ -85,6 +88,7 @@ class Calls(SyncAPIResource):
                 "StatusCallback": status_callback,
                 "StatusCallbackEvent": status_callback_event,
                 "Timeout": timeout,
+                "MachineDetection": machine_detection,
             }
         )
         return self._client._post(
@@ -328,6 +332,7 @@ class AsyncCalls(AsyncAPIResource):
         status_callback: str | None = None,
         status_callback_event: str | None = None,
         timeout: int | None = None,
+        machine_detection: Literal["Enable", "Hangup"] | None = None,
         extra_headers: dict[str, str] | None = None,
         extra_query: dict[str, object] | None = None,
         timeout_: float | None = None,
@@ -358,6 +363,7 @@ class AsyncCalls(AsyncAPIResource):
                 "StatusCallback": status_callback,
                 "StatusCallbackEvent": status_callback_event,
                 "Timeout": timeout,
+                "MachineDetection": machine_detection,
             }
         )
         return await self._client._post(

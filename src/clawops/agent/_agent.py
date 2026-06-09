@@ -11,7 +11,7 @@ import math
 import os
 import signal
 import time
-from typing import Any, Callable, Awaitable, TypedDict
+from typing import Any, Awaitable, Callable, Literal, TypedDict
 
 from .._exceptions import AgentError
 from ._builtin_tools import BuiltinTool, resolve_builtin_tools
@@ -186,17 +186,32 @@ class ClawOpsAgent:
         except Exception:
             pass
 
-    async def call(self, to: str, *, timeout: int = 60) -> CallSession:
+    async def call(
+        self,
+        to: str,
+        *,
+        timeout: int = 60,
+        machine_detection: Literal["Enable", "Hangup"] | None = None,
+    ) -> CallSession:
         """발신 전화를 건다. CallSession을 즉시 리턴 (queued 상태).
 
         connect()가 호출되지 않은 상태면 자동으로 connect()를 먼저 수행한다.
+
+        Args:
+            to: 착신 번호.
+            timeout: 발신 ring timeout (초).
+            machine_detection: 자동응답기/음성사서함 감지(AMD). ``"Enable"`` 이면 감지 후
+                ``AnsweredBy`` 통보(통화 계속), ``"Hangup"`` 이면 음성사서함 감지 시 자동 종료.
+                ``None`` (기본)이면 비활성.
         """
         await self.connect()
 
         import aiohttp as _aiohttp
 
         url = f"{self._base_url}/v1/accounts/{self._account_id}/calls"
-        body = {"To": to, "From": self._from_number, "Timeout": timeout}
+        body: dict[str, object] = {"To": to, "From": self._from_number, "Timeout": timeout}
+        if machine_detection in ("Enable", "Hangup"):
+            body["MachineDetection"] = machine_detection
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
