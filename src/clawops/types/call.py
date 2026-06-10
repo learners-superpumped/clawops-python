@@ -24,6 +24,9 @@ class Call(BaseModel):
         recording_url: 녹음 다운로드 경로(상대). 녹음이 없으면 None.
             예: '/v1/accounts/AC.../recordings/CA...'. 다운로드는
             ``client.accounts(account_id).recordings.download(call_id)`` 사용.
+        answered_by: AMD(machine_detection) 결과. machine_detection 을 켠 발신
+            통화에만 값이 있으며 human(사람) / machine(자동응답기·음성사서함) /
+            unknown(판정 불가). 미사용 시 None.
     """
 
     call_id: str
@@ -33,6 +36,7 @@ class Call(BaseModel):
     direction: Literal["outbound", "inbound"]
     duration: Optional[int] = None
     recording_url: Optional[str] = None
+    answered_by: Optional[Literal["human", "machine", "unknown"]] = None
     account_id: str
     date_created: datetime
     date_updated: Optional[datetime] = None
