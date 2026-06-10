@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30.0 (2026-06-10)
+
+### Added
+- `Call.answered_by` — AMD(`machine_detection`) 결과 필드 추가. `machine_detection` 을 켠 발신 통화에서 `human`(사람) / `machine`(자동응답기·음성사서함) / `unknown`(판정 불가) 값으로 채워진다 (`calls.get` / `calls.list` 응답). 미사용 통화는 `None`.
+- README·agent quickstart 에 `machine_detection` 사용법과 `answered_by` / status callback `AnsweredBy` 확인 방법 문서화.
+
 ## 0.27.1 (2026-05-26)
 
 ### Fixed
