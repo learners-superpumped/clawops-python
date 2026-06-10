@@ -200,6 +200,17 @@ call = client.calls.create(
 )
 print(call.call_id)
 
+# 음성사서함 감지(AMD) — Enable=결과만 통보(통화 계속), Hangup=사서함이면 자동 종료
+amd_call = client.calls.create(
+    to="01012345678",
+    from_="07052358010",
+    url="https://my-app.com/twiml",
+    machine_detection="Enable",
+)
+# 통화 종료 후 결과 확인: human(사람) / machine(자동응답기) / unknown(판정 불가)
+print(client.calls.get(amd_call.call_id).answered_by)
+# status_callback 을 설정했다면 completed 이벤트 payload 의 AnsweredBy 로도 통보됩니다.
+
 # 통화 목록 조회 (페이지네이션)
 page = client.calls.list(status="completed", page=0, page_size=20)
 for call in page:
