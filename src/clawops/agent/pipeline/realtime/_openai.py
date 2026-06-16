@@ -204,7 +204,7 @@ class OpenAIRealtime:
                         "format": {"type": "audio/pcmu"},
                         "noise_reduction": {"type": "near_field"},
                         "transcription": {
-                            "model": "gpt-4o-transcribe-diarize",
+                            "model": "gpt-4o-transcribe",
                             "language": self._config.language,
                         },
                         "turn_detection": self._config.turn_detection,
