@@ -59,7 +59,8 @@ def test_openai_realtime_defaults():
     assert session._config.greeting is True
     assert session._config.turn_detection == {
         "type": "semantic_vad",
-        "eagerness": "medium",
+        "eagerness": "low",
+        "create_response": True,
         "interrupt_response": True,
     }
 

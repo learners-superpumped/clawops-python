@@ -96,13 +96,12 @@ class OpenAIRealtime:
         if api_key is None:
             api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
-            raise ValueError(
-                "OpenAI API key is required. Set OPENAI_API_KEY env var or pass api_key argument."
-            )
+            raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY env var or pass api_key argument.")
         if turn_detection is None:
             turn_detection = {
                 "type": "semantic_vad",
-                "eagerness": "medium",
+                "eagerness": "low",
+                "create_response": True,
                 "interrupt_response": True,
             }
         self._config = OpenAIRealtimeConfig(
@@ -203,9 +202,9 @@ class OpenAIRealtime:
                 "audio": {
                     "input": {
                         "format": {"type": "audio/pcmu"},
-                        "noise_reduction": {"type": "far_field"},
+                        "noise_reduction": {"type": "near_field"},
                         "transcription": {
-                            "model": "gpt-realtime-whisper",
+                            "model": "gpt-4o-transcribe-diarize",
                             "language": self._config.language,
                         },
                         "turn_detection": self._config.turn_detection,
@@ -309,6 +308,7 @@ class OpenAIRealtime:
             for off in range(0, full_end, chunk_size):
                 if not self._first_audio_logged:
                     from .._buffering_call import log_first_realtime_audio
+
                     log_first_realtime_audio(self._call)
                     self._first_audio_logged = True
                 await self._call.send_audio(ulaw[off : off + chunk_size])
