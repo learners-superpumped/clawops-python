@@ -13,6 +13,8 @@ from .resources.messages import AsyncMessages, Messages
 from .resources.numbers import AsyncNumbers, Numbers
 from .resources.recordings import AsyncRecordings, Recordings
 from .resources.assignment_links import AssignmentLinks, AsyncAssignmentLinks
+from .resources.sip_credentials import AsyncSipCredentials, SipCredentials
+from .resources.sip_endpoints import AsyncSipEndpoints, SipEndpoints
 from .resources.webhook_logs import AsyncWebhookLogs, WebhookLogs
 from .webhooks import Webhooks
 
@@ -86,6 +88,16 @@ class ClawOps(SyncAPIClient):
     def numbers(self) -> Numbers:
         """전화번호(Numbers) 리소스에 접근합니다."""
         return Numbers(client=self, account_id=self._default_account_id)
+
+    @property
+    def sip_credentials(self) -> SipCredentials:
+        """SIP 단말(credential) 리소스에 접근합니다 (조회 전용)."""
+        return SipCredentials(client=self, account_id=self._default_account_id)
+
+    @property
+    def sip_endpoints(self) -> SipEndpoints:
+        """SIP 엔드포인트 리소스에 접근합니다 (조회 전용)."""
+        return SipEndpoints(client=self, account_id=self._default_account_id)
 
     @property
     def recordings(self) -> Recordings:
@@ -176,6 +188,14 @@ class AsyncClawOps(AsyncAPIClient):
     @property
     def numbers(self) -> AsyncNumbers:
         return AsyncNumbers(client=self, account_id=self._default_account_id)
+
+    @property
+    def sip_credentials(self) -> AsyncSipCredentials:
+        return AsyncSipCredentials(client=self, account_id=self._default_account_id)
+
+    @property
+    def sip_endpoints(self) -> AsyncSipEndpoints:
+        return AsyncSipEndpoints(client=self, account_id=self._default_account_id)
 
     @property
     def recordings(self) -> AsyncRecordings:
