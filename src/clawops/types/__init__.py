@@ -6,6 +6,7 @@ from .number import NumberListItem, NumberUpdateResponse, PhoneNumber
 from .number_params import NumberCreateParams, NumberUpdateParams
 from .recording import RecordingDownload
 from .shared import PaginationMeta
+from .sip import SipCredential, SipEndpoint
 from .summary import SummaryStatus
 from .transcript import TranscriptRequestAccepted, TranscriptSegment, TranscriptStatus
 from .webhook_log import WebhookLog
@@ -26,6 +27,8 @@ __all__ = [
     "PaginationMeta",
     "PhoneNumber",
     "RecordingDownload",
+    "SipCredential",
+    "SipEndpoint",
     "SummaryStatus",
     "TranscriptRequestAccepted",
     "TranscriptSegment",

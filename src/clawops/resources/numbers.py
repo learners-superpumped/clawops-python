@@ -60,14 +60,21 @@ class Numbers(SyncAPIResource):
 
     def update(self, number: str, *, webhook_url: str | None = None,
                webhook_method: Literal["POST", "GET"] | None = None,
+               routing_type: Literal["webhook", "sip", "softphone"] | None = None,
+               sip_endpoint_id: str | None = None,
+               sip_credential_id: str | None = None,
                extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
                timeout: float | None = None) -> NumberUpdateResponse:
-        """등록된 번호의 설정을 수정합니다. webhookUrl과 webhookMethod만 수정 가능합니다.
+        """등록된 번호의 설정을 수정합니다. webhook 및 inbound 라우팅(webhook/sip/softphone)을 변경할 수 있습니다.
 
         Args:
             number: 수정할 전화번호.
             webhook_url: Webhook URL.
             webhook_method: 'POST' 또는 'GET'.
+            routing_type: inbound 라우팅 모드. 'sip' 은 sip_endpoint_id, 'softphone' 은 sip_credential_id 필요
+                (둘 다 sip_trunk 부가서비스 활성화 필요).
+            sip_endpoint_id: routing_type='sip' 일 때 라우팅할 SipEndpoint id.
+            sip_credential_id: routing_type='softphone' 일 때 착신할 등록 SIP credential(단말) id.
             extra_headers: 추가 HTTP 헤더.
             extra_query: 추가 쿼리 파라미터.
             timeout: 이 요청의 타임아웃 (초).
@@ -76,11 +83,18 @@ class Numbers(SyncAPIResource):
             수정된 NumberUpdateResponse 객체.
 
         Raises:
-            BadRequestError: 수정할 필드 없음 또는 잘못된 webhookMethod.
+            BadRequestError: 수정할 필드 없음 / 잘못된 webhookMethod / routingType 부적합 /
+                sip·softphone 필수 id 누락 / endpoint·credential 소유권 없음.
             NotFoundError: 번호를 찾을 수 없음.
-            PermissionDeniedError: 번호 소유권 없음.
+            PermissionDeniedError: 번호 소유권 없음 또는 sip_trunk 부가서비스 비활성.
         """
-        body = strip_not_given({"webhookUrl": webhook_url, "webhookMethod": webhook_method})
+        body = strip_not_given({
+            "webhookUrl": webhook_url,
+            "webhookMethod": webhook_method,
+            "routingType": routing_type,
+            "sipEndpointId": sip_endpoint_id,
+            "sipCredentialId": sip_credential_id,
+        })
         return self._client._put(
             f"{self._base_path}/numbers/{number}", body=body, cast_to=NumberUpdateResponse,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
@@ -131,10 +145,19 @@ class AsyncNumbers(AsyncAPIResource):
 
     async def update(self, number: str, *, webhook_url: str | None = None,
                      webhook_method: Literal["POST", "GET"] | None = None,
+                     routing_type: Literal["webhook", "sip", "softphone"] | None = None,
+                     sip_endpoint_id: str | None = None,
+                     sip_credential_id: str | None = None,
                      extra_headers: dict[str, str] | None = None, extra_query: dict[str, object] | None = None,
                      timeout: float | None = None) -> NumberUpdateResponse:
-        """번호 설정을 비동기로 수정합니다."""
-        body = strip_not_given({"webhookUrl": webhook_url, "webhookMethod": webhook_method})
+        """번호 설정(webhook + inbound 라우팅)을 비동기로 수정합니다."""
+        body = strip_not_given({
+            "webhookUrl": webhook_url,
+            "webhookMethod": webhook_method,
+            "routingType": routing_type,
+            "sipEndpointId": sip_endpoint_id,
+            "sipCredentialId": sip_credential_id,
+        })
         return await self._client._put(
             f"{self._base_path}/numbers/{number}", body=body, cast_to=NumberUpdateResponse,
             extra_headers=extra_headers, extra_query=extra_query, timeout=timeout,
